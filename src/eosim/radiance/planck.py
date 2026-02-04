@@ -260,3 +260,33 @@ def spectral_radiance_ratio(
     L1 = spectral_radiance(wavelength1_um, temperature_K)
     L2 = spectral_radiance(wavelength2_um, temperature_K)
     return L1 / L2
+
+
+def planck_radiance_integrated(
+    temperature_K: float,
+    wavelength_min_um: float,
+    wavelength_max_um: float,
+    n_samples: int = 100,
+) -> float:
+    """Compute band-integrated Planck radiance.
+
+    Convenience function that integrates spectral radiance over a
+    wavelength band without requiring a SpectralBand object.
+
+    Args:
+        temperature_K: Temperature in Kelvin
+        wavelength_min_um: Minimum wavelength in micrometers
+        wavelength_max_um: Maximum wavelength in micrometers
+        n_samples: Number of samples for integration
+
+    Returns:
+        Band-integrated radiance in W/(m²·sr)
+    """
+    wavelengths = np.linspace(wavelength_min_um, wavelength_max_um, n_samples)
+    spectral_L = spectral_radiance(wavelengths, temperature_K)
+
+    # Use numpy.trapezoid if available (numpy >= 2.0), else fall back to numpy.trapz
+    try:
+        return float(np.trapezoid(spectral_L, wavelengths))
+    except AttributeError:
+        return float(np.trapz(spectral_L, wavelengths))

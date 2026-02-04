@@ -71,6 +71,12 @@ class PhysicalConstants:
 # Singleton instance for convenience
 CONSTANTS: Final[PhysicalConstants] = PhysicalConstants()
 
+# Module-level constants for direct import
+SPEED_OF_LIGHT: Final[float] = CONSTANTS.c
+PLANCK_H: Final[float] = CONSTANTS.h
+BOLTZMANN_K: Final[float] = CONSTANTS.k_B
+STEFAN_BOLTZMANN: Final[float] = CONSTANTS.sigma
+
 
 # Spectral band boundaries [micrometers]
 @dataclass(frozen=True)
