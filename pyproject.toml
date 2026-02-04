@@ -1,0 +1,123 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eosim"
+version = "0.1.0"
+description = "Electro-Optical/Infrared Simulation Framework"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "EOSIM Contributors" }
+]
+keywords = [
+    "electro-optical",
+    "infrared",
+    "simulation",
+    "sensor",
+    "imaging",
+    "radiometry",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+dependencies = [
+    # Core scientific computing
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "numba>=0.57",
+
+    # Image processing
+    "opencv-python>=4.8",
+    "scikit-image>=0.21",
+
+    # Visualization
+    "matplotlib>=3.7",
+
+    # Data handling
+    "h5py>=3.8",
+    "xarray>=2023.1",
+
+    # Configuration and validation
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+rendering = [
+    "mitsuba>=3.5",
+]
+atmosphere-validation = [
+    "Py6S>=1.9",
+]
+detector = [
+    "pyxel-sim>=2.0",
+]
+spectral = [
+    "spectral>=0.23",
+]
+gpu = [
+    "cupy>=12.0",
+    "torch>=2.0",
+    "jax[cpu]>=0.4",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+all = [
+    "eosim[rendering,atmosphere-validation,detector,spectral,gpu,dev]",
+]
+
+[project.scripts]
+eosim = "eosim.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cohyos/eosim"
+Documentation = "https://github.com/cohyos/eosim/tree/main/docs"
+Repository = "https://github.com/cohyos/eosim"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eosim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
