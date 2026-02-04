@@ -256,14 +256,14 @@ class DetectorProperties:
             },
             DetectorType.HGCDTE_MWIR: {
                 "operating_temp_k": 77.0,
-                "full_well_electrons": 1500000.0,
+                "full_well_electrons": 5000000.0,  # 5M e- typical for MWIR
                 "read_noise_electrons": 40.0,
                 "dark_current_e_per_s": 100.0,
                 "bit_depth": 14,
             },
             DetectorType.HGCDTE_LWIR: {
                 "operating_temp_k": 77.0,
-                "full_well_electrons": 500000.0,
+                "full_well_electrons": 10000000.0,  # 10M e- typical for LWIR
                 "read_noise_electrons": 100.0,
                 "dark_current_e_per_s": 10000.0,
                 "bit_depth": 14,
@@ -277,8 +277,8 @@ class DetectorProperties:
             },
             DetectorType.MICROBOLOMETER: {
                 "operating_temp_k": 300.0,  # Uncooled
-                "full_well_electrons": 100000.0,  # Placeholder
-                "read_noise_electrons": 50.0,  # Uses NETD instead typically
+                "full_well_electrons": 10000000.0,  # 10M (scaled for photon model)
+                "read_noise_electrons": 500.0,  # Higher noise (NETD ~50mK equiv)
                 "dark_current_e_per_s": 0.0,
                 "bit_depth": 14,
             },

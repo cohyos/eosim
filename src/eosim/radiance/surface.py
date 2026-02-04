@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from eosim.core.spectral import SpectralBand
+from eosim.core.compat import integrate_trapz
 from eosim.radiance.planck import spectral_radiance, band_radiance
 
 
@@ -114,7 +115,7 @@ def surface_band_radiance(
     """
     wavelengths = np.linspace(band.lambda_min_um, band.lambda_max_um, n_samples)
     spectral_L = surface_spectral_radiance(wavelengths, surface, incident)
-    return float(np.trapz(spectral_L, wavelengths))
+    return float(integrate_trapz(spectral_L, wavelengths))
 
 
 def apparent_temperature(
@@ -317,4 +318,4 @@ class SurfaceRadianceModel:
         L_total = L_emitted + L_reflected
 
         # Integrate over wavelength (axis 0)
-        return np.trapz(L_total, self._wavelengths, axis=0)
+        return integrate_trapz(L_total, self._wavelengths, axis=0)

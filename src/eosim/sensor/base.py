@@ -38,7 +38,7 @@ class SensorParameters:
         spectral_band_um: Spectral band (min, max) in micrometers
     """
     fpa: FPAConfig
-    integration_time_s: float = 0.01
+    integration_time_s: float = 0.0002  # 200 μs default (suitable for 300K LWIR)
     optics_f_number: float = 2.0
     optics_transmission: float = 0.9
     cold_shield_efficiency: float = 1.0
@@ -490,7 +490,7 @@ def create_sensor_model(
     detector_type: Union[DetectorType, str] = DetectorType.HGCDTE_MWIR,
     pixel_pitch_um: float = 15.0,
     resolution: tuple[int, int] = (480, 640),
-    integration_time_s: float = 0.01,
+    integration_time_s: Optional[float] = None,
     f_number: float = 2.0,
     spectral_band_um: Optional[tuple[float, float]] = None,
     seed: Optional[int] = None,
@@ -501,7 +501,7 @@ def create_sensor_model(
         detector_type: Detector type
         pixel_pitch_um: Pixel pitch in micrometers
         resolution: Array resolution (height, width)
-        integration_time_s: Integration time
+        integration_time_s: Integration time (auto-selected if None)
         f_number: Optics f-number
         spectral_band_um: Spectral band (uses default for detector if None)
         seed: Random seed
@@ -524,8 +524,24 @@ def create_sensor_model(
         DetectorType.MICROBOLOMETER: (8.0, 14.0),
     }
 
+    # Default integration times by detector type
+    # Thermal IR detectors need shorter integration for 300K scenes
+    default_integration_times = {
+        DetectorType.SI_CCD: 0.033,        # 33 ms (video rate visible)
+        DetectorType.SI_CMOS: 0.016,       # 16 ms (60 fps visible)
+        DetectorType.INGAAS: 0.010,        # 10 ms (SWIR)
+        DetectorType.INSB: 0.001,          # 1 ms (MWIR, cooled)
+        DetectorType.HGCDTE_MWIR: 0.001,   # 1 ms (MWIR, cooled)
+        DetectorType.HGCDTE_LWIR: 0.0002,  # 200 μs (LWIR, high photon flux)
+        DetectorType.QWIP: 0.0005,         # 500 μs (LWIR)
+        DetectorType.MICROBOLOMETER: 0.0001,  # 100 μs (scaled for photon model)
+    }
+
     if spectral_band_um is None:
         spectral_band_um = default_bands.get(detector_type, (3.0, 5.0))
+
+    if integration_time_s is None:
+        integration_time_s = default_integration_times.get(detector_type, 0.001)
 
     # Create FPA config
     geometry = FPAGeometry(

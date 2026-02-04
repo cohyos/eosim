@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 from eosim.core.constants import CONSTANTS
 from eosim.core.spectral import SpectralBand, WavelengthGrid
+from eosim.core.compat import integrate_trapz
 
 
 def spectral_radiance(
@@ -36,7 +37,11 @@ def spectral_radiance(
     c2 = CONSTANTS.c2    # hc/k [m·K]
 
     # Handle broadcasting for wavelength × temperature grids
-    if wavelength_m.ndim == 1 and temperature.ndim > 0 and temperature.ndim != wavelength_m.ndim:
+    # For 1D wavelength and 2D temperature (e.g., scene), reshape wavelength
+    # to (n_wavelengths, 1, 1) for proper broadcasting with (rows, cols)
+    if wavelength_m.ndim == 1 and temperature.ndim == 2:
+        wavelength_m = wavelength_m[:, np.newaxis, np.newaxis]
+    elif wavelength_m.ndim == 1 and temperature.ndim == 1 and wavelength_m.shape != temperature.shape:
         wavelength_m = wavelength_m[:, np.newaxis]
 
     exponent = c2 / (wavelength_m * temperature)
@@ -120,10 +125,10 @@ def band_radiance(
 
     # Trapezoidal integration
     if spectral_L.ndim == 1:
-        return float(np.trapz(spectral_L, wavelengths))
+        return float(integrate_trapz(spectral_L, wavelengths))
     else:
         # Integrate along wavelength axis (axis 0)
-        return np.trapz(spectral_L, wavelengths, axis=0)
+        return integrate_trapz(spectral_L, wavelengths, axis=0)
 
 
 def band_exitance(
@@ -263,30 +268,37 @@ def spectral_radiance_ratio(
 
 
 def planck_radiance_integrated(
-    temperature_K: float,
+    temperature_K: Union[float, NDArray[np.floating]],
     wavelength_min_um: float,
     wavelength_max_um: float,
     n_samples: int = 100,
-) -> float:
+) -> Union[float, NDArray[np.floating]]:
     """Compute band-integrated Planck radiance.
 
     Convenience function that integrates spectral radiance over a
     wavelength band without requiring a SpectralBand object.
 
     Args:
-        temperature_K: Temperature in Kelvin
+        temperature_K: Temperature in Kelvin. Can be scalar or 2D array
+            for spatially-varying temperature (scene).
         wavelength_min_um: Minimum wavelength in micrometers
         wavelength_max_um: Maximum wavelength in micrometers
         n_samples: Number of samples for integration
 
     Returns:
-        Band-integrated radiance in W/(m²·sr)
+        Band-integrated radiance in W/(m²·sr). Same shape as temperature_K.
     """
     wavelengths = np.linspace(wavelength_min_um, wavelength_max_um, n_samples)
-    spectral_L = spectral_radiance(wavelengths, temperature_K)
+    temperature = np.asarray(temperature_K, dtype=np.float64)
 
-    # Use numpy.trapezoid if available (numpy >= 2.0), else fall back to numpy.trapz
-    try:
-        return float(np.trapezoid(spectral_L, wavelengths))
-    except AttributeError:
-        return float(np.trapz(spectral_L, wavelengths))
+    # spectral_radiance handles broadcasting automatically
+    # Result shape: (n_samples, *temperature.shape) for 2D temp, (n_samples,) for scalar
+    spectral_L = spectral_radiance(wavelengths, temperature)
+
+    # Integrate along wavelength axis (axis 0)
+    result = integrate_trapz(spectral_L, wavelengths, axis=0)
+
+    # Return scalar for scalar input
+    if temperature.ndim == 0:
+        return float(result)
+    return result

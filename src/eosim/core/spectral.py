@@ -12,6 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from eosim.core.constants import BAND_LIMITS, CONSTANTS
+from eosim.core.compat import integrate_trapz
 
 
 class SpectralRegion(Enum):
@@ -265,7 +266,7 @@ class SpectralQuantity:
         mask = (self.wavelengths_um >= lambda_min_um) & (
             self.wavelengths_um <= lambda_max_um
         )
-        return float(np.trapz(self.values[mask], self.wavelengths_um[mask]))
+        return float(integrate_trapz(self.values[mask], self.wavelengths_um[mask]))
 
     def band_average(self, band: SpectralBand) -> float:
         """Compute average value over a spectral band."""
@@ -355,4 +356,4 @@ def band_integrated_radiance(
     grid = WavelengthGrid.from_band(band, n_points)
     spectral_radiance = planck_radiance(grid.wavelengths_um, temperature_K)
     # Integrate using trapezoidal rule (result in W/(m²·sr))
-    return float(np.trapz(spectral_radiance, grid.wavelengths_um))
+    return float(integrate_trapz(spectral_radiance, grid.wavelengths_um))

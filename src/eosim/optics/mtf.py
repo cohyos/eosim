@@ -10,6 +10,8 @@ from typing import Optional, Union
 import numpy as np
 from numpy.typing import NDArray
 
+from eosim.core.compat import integrate_trapz
+
 
 @dataclass
 class MTFResult:
@@ -435,8 +437,4 @@ def area_under_mtf(
     Returns:
         Area under MTF (higher is better)
     """
-    # Use trapezoid (trapz is deprecated in newer numpy)
-    try:
-        return float(np.trapezoid(mtf, frequencies))
-    except AttributeError:
-        return float(np.trapz(mtf, frequencies))
+    return float(integrate_trapz(mtf, frequencies))
