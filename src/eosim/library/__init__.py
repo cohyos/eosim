@@ -78,6 +78,39 @@ from eosim.library.platform import (
     apply_platform_motion_effects,
 )
 
+
+# GUI (lazy import to avoid tkinter dependency for non-GUI usage)
+def launch_scenario_builder():
+    """Launch the scenario builder GUI.
+
+    Provides a Windows-like graphical interface for building and running
+    EO/IR sensor simulation scenarios.
+
+    Features:
+    - Sensor library selection with detailed specifications
+    - Target object configuration with category filtering
+    - 6DOF platform motion settings (position, velocity, gimbal, orbit)
+    - Environment and background configuration
+    - Real-time simulation preview
+    - Export results to image files
+
+    Example:
+        >>> from eosim.library import launch_scenario_builder
+        >>> launch_scenario_builder()
+    """
+    from eosim.library.gui import launch_scenario_builder as _launch
+    return _launch()
+
+
+def list_object_categories():
+    """List all available object categories.
+
+    Returns:
+        List of category names
+    """
+    return list_categories()
+
+
 __all__ = [
     # Objects
     "ObjectLibrary",
@@ -134,4 +167,7 @@ __all__ = [
     "apply_motion_blur",
     "apply_jitter",
     "apply_platform_motion_effects",
+    # GUI
+    "launch_scenario_builder",
+    "list_object_categories",
 ]
