@@ -35,6 +35,7 @@ class EnvironmentalConditions:
     air_temperature_K: float = 288.15  # Air temperature [K]
     wind_speed_m_s: float = 1.0  # Wind speed [m/s]
     relative_humidity: float = 0.5  # Relative humidity (0-1)
+    visibility_km: float = 23.0  # Atmospheric visibility [km]
 
     @property
     def solar_zenith_angle_rad(self) -> float:

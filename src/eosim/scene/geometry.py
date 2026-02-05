@@ -316,8 +316,9 @@ class HeightField(Geometry):
         row = (y - self.y_range[0]) / self.resolution_y
 
         # Bilinear interpolation
-        row = np.clip(row, 0, self.heights.shape[0] - 1.001)
-        col = np.clip(col, 0, self.heights.shape[1] - 1.001)
+        # Clip to valid range, using epsilon to avoid index out of bounds
+        row = np.clip(row, 0, self.heights.shape[0] - 1 - 1e-10)
+        col = np.clip(col, 0, self.heights.shape[1] - 1 - 1e-10)
 
         r0, c0 = int(row), int(col)
         r1, c1 = min(r0 + 1, self.heights.shape[0] - 1), min(c0 + 1, self.heights.shape[1] - 1)

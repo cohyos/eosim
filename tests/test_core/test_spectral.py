@@ -68,8 +68,8 @@ class TestSpectralBand:
     def test_wavelength_conversion_to_meters(self) -> None:
         """Test wavelength conversion to meters."""
         band = SpectralBand(name="test", lambda_min_um=10.0, lambda_max_um=12.0)
-        assert band.lambda_min_m == 10e-6
-        assert band.lambda_max_m == 12e-6
+        assert band.lambda_min_m == pytest.approx(10e-6)
+        assert band.lambda_max_m == pytest.approx(12e-6)
 
     def test_contains_wavelength(self) -> None:
         """Test wavelength containment check."""

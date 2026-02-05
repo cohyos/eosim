@@ -467,7 +467,8 @@ class SimulationConfig(BaseModel):
     def to_yaml(self, path: Union[str, Path]) -> None:
         """Save configuration to YAML file."""
         with open(path, "w") as f:
-            yaml.dump(self.model_dump(), f, default_flow_style=False, sort_keys=False)
+            # Use mode='json' to ensure Path objects are serialized as strings
+            yaml.dump(self.model_dump(mode='json'), f, default_flow_style=False, sort_keys=False)
 
     @classmethod
     def minimal_example(cls) -> "SimulationConfig":
