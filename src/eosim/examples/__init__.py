@@ -1,11 +1,11 @@
 """
 EOSIM Example Scenarios.
 
-This module provides 10 comprehensive example scenarios demonstrating
+This module provides 25+ comprehensive example scenarios demonstrating
 different objects, backgrounds, sensors, and imaging modes.
 
-Examples:
----------
+Basic Examples (10):
+--------------------
 1. Vehicle on Road (LWIR) - Hot vehicle on cool road background
 2. Person in Forest (MWIR) - Human target with vegetation clutter
 3. Aircraft Against Sky (MWIR) - Fast-moving aircraft with motion blur
@@ -16,6 +16,19 @@ Examples:
 8. Night Vision (SWIR) - Low-light surveillance with SWIR
 9. Solar Panel Inspection (LWIR) - Defect detection in solar arrays
 10. Urban Surveillance (Visible/SWIR) - Multi-spectral urban scene
+
+Library Examples (10) - Using Object/Sensor Library:
+----------------------------------------------------
+11. MX-15 vs F-16 - Air-to-air fighter engagement
+12. MX-20 Convoy - Multi-vehicle surveillance
+13. Sniper vs Tank - Ground vehicle targeting
+14. TopLite Patrol - Helicopter patrol scenario
+15. Naval Surveillance - Ship detection
+16. SAM Site Detection - SAM launcher detection
+17. Night Personnel - Personnel detection at night
+18. UAV Tracking - Drone tracking
+19. Missile Detection - Cruise missile detection
+20. Helicopter Engagement - Attack helicopter targeting
 
 Each example returns a simulation result with digital image and metadata.
 """
@@ -43,7 +56,25 @@ from eosim.examples.scenarios import (
     create_industrial_scene,
 )
 
+from eosim.examples.library_examples import (
+    # Library-based examples
+    example_mx15_vs_f16,
+    example_mx20_convoy,
+    example_sniper_vs_tank,
+    example_toplite_patrol,
+    example_naval_surveillance,
+    example_sam_site_detection,
+    example_night_personnel,
+    example_uav_tracking,
+    example_missile_detection,
+    example_helicopter_engagement,
+    # Utility functions
+    list_library_examples,
+    get_library_example,
+)
+
 __all__ = [
+    # Basic examples
     "example_vehicle_on_road",
     "example_person_in_forest",
     "example_aircraft_sky",
@@ -61,4 +92,17 @@ __all__ = [
     "create_person_scene",
     "create_building_scene",
     "create_industrial_scene",
+    # Library examples
+    "example_mx15_vs_f16",
+    "example_mx20_convoy",
+    "example_sniper_vs_tank",
+    "example_toplite_patrol",
+    "example_naval_surveillance",
+    "example_sam_site_detection",
+    "example_night_personnel",
+    "example_uav_tracking",
+    "example_missile_detection",
+    "example_helicopter_engagement",
+    "list_library_examples",
+    "get_library_example",
 ]

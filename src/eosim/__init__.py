@@ -16,6 +16,18 @@ Quick Start:
 >>> temps = 300 + 10 * np.random.randn(480, 640)
 >>> image = quick_simulation(temps, sensor_type="lwir")
 
+Library Usage (Objects, Sensors, Scenarios):
+--------------------------------------------
+>>> from eosim.library import get_object, get_sensor, create_scenario, run_scenario
+>>> # List available objects and sensors
+>>> from eosim.library import list_objects, list_sensors
+>>> print(list_objects())  # ['f16', 'f35', 'm1_abrams', ...]
+>>> print(list_sensors())  # ['mx15', 'mx20', 'toplite_iii', ...]
+>>>
+>>> # Create and run a scenario
+>>> scenario = create_scenario(sensor="mx15", target="f16", range_km=10)
+>>> result = run_scenario(scenario)
+
 Video Processing:
 -----------------
 >>> from eosim.video import process_video, VideoSimulationConfig, VideoProcessingMode
@@ -32,7 +44,8 @@ Modules:
 - pipeline: Simulation engine and effects
 - output: File writers and formats
 - video: Video-to-simulation processing
-- examples: 10 example scenarios
+- library: Object library, sensor specs, scenario system
+- examples: 15+ example scenarios
 """
 
 __version__ = "0.1.0"
