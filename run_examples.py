@@ -65,7 +65,7 @@ def list_examples():
         "solar_panel_inspection": "Solar panel defect detection (LWIR at 30m)",
         "urban_surveillance": "Urban street scene (Visible at 200m)",
         # Realistic examples
-        "f16_10km": "★ F-16 fighter jet at 10km (MWIR) - REALISTIC",
+        "f16_500m": "★ F-16 fighter jet at 500m (MWIR) - REALISTIC",
         "realistic_vehicle": "★ Vehicle with thermal gradients (LWIR) - REALISTIC",
         "realistic_person": "★ Person with thermal features (MWIR) - REALISTIC",
     }

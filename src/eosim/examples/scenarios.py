@@ -966,19 +966,19 @@ def example_urban_surveillance(seed: int = 42) -> ExampleResult:
 # Realistic Examples (with proper thermal signatures)
 # ============================================================================
 
-def example_f16_10km(seed: int = 42) -> ExampleResult:
+def example_f16_500m(seed: int = 42) -> ExampleResult:
     """
-    Example 11: F-16 Fighter at 10km Range (MWIR)
+    Example 11: F-16 Fighter at 500m Range (MWIR)
 
-    Realistic F-16 thermal signature at long range with:
+    Realistic F-16 thermal signature at close range with:
     - Hot exhaust nozzle and plume
     - Aerodynamically heated leading edges
     - Cold airframe skin at altitude
-    - Proper atmospheric attenuation
+    - Detailed thermal features visible
 
     Sensor: MWIR HgCdTe (3-5 μm) - better for hot targets
-    Scene: F-16 at 10km range, 5km altitude
-    Background: Cold sky (~220K)
+    Scene: F-16 at 500m range, 1km altitude
+    Background: Cold sky (~230K)
 
     Returns:
         ExampleResult with simulated thermal image
@@ -986,11 +986,11 @@ def example_f16_10km(seed: int = 42) -> ExampleResult:
     from eosim.pipeline import create_pipeline, SceneInput
     from eosim.examples.realistic_scenes import create_f16_at_range
 
-    # Create realistic F-16 scene
+    # Create realistic F-16 scene at 500m
     temp_map, emissivity_map, scene_meta = create_f16_at_range(
         shape=(480, 640),
-        range_km=10.0,
-        altitude_km=5.0,
+        range_km=0.5,  # 500 meters
+        altitude_km=1.0,  # Lower altitude for close range
         seed=seed,
     )
 
@@ -1000,22 +1000,22 @@ def example_f16_10km(seed: int = 42) -> ExampleResult:
     scene = SceneInput(
         temperature_map=temp_map,
         emissivity_map=emissivity_map,
-        background_temperature=220.0,  # Cold sky
+        background_temperature=230.0,  # Cold sky
     )
-    result = pipeline.run(scene, range_m=10000.0)
+    result = pipeline.run(scene, range_m=500.0)
 
     return ExampleResult(
-        name="f16_10km",
-        description="F-16 fighter jet at 10km range (MWIR)",
+        name="f16_500m",
+        description="F-16 fighter jet at 500m range (MWIR)",
         digital_image=result.digital_image,
         temperature_map=temp_map,
         sensor_type="MWIR",
         metadata={
-            "range_m": 10000.0,
+            "range_m": 500.0,
             "band": "3-5 μm",
             "target": "F-16",
             "aspect": "side",
-            "altitude_km": 5.0,
+            "altitude_km": 1.0,
             "background": "cold_sky",
             **scene_meta,
         },
@@ -1165,7 +1165,7 @@ EXAMPLES = {
     "solar_panel_inspection": example_solar_panel_inspection,
     "urban_surveillance": example_urban_surveillance,
     # Realistic examples with improved thermal signatures
-    "f16_10km": example_f16_10km,
+    "f16_500m": example_f16_500m,
     "realistic_vehicle": example_realistic_vehicle,
     "realistic_person": example_realistic_person,
 }
