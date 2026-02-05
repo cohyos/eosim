@@ -16,6 +16,12 @@ Quick Start:
 >>> temps = 300 + 10 * np.random.randn(480, 640)
 >>> image = quick_simulation(temps, sensor_type="lwir")
 
+Video Processing:
+-----------------
+>>> from eosim.video import process_video, VideoSimulationConfig, VideoProcessingMode
+>>> config = VideoSimulationConfig(mode=VideoProcessingMode.THERMAL_ESTIMATE)
+>>> result = process_video("input.mp4", config, "output.mp4")
+
 Modules:
 --------
 - core: Physical constants, spectral utilities
@@ -25,6 +31,7 @@ Modules:
 - atmosphere: Transmission models
 - pipeline: Simulation engine and effects
 - output: File writers and formats
+- video: Video-to-simulation processing
 - examples: 10 example scenarios
 """
 
