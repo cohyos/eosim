@@ -444,6 +444,292 @@ def example_helicopter_engagement(seed: int = 42) -> ExampleResult:
     )
 
 
+# =============================================================================
+# 6DOF Platform Motion Examples
+# =============================================================================
+
+def example_helicopter_orbit(seed: int = 42) -> ExampleResult:
+    """
+    Example: Helicopter Orbiting Target with 6DOF Motion
+
+    Demonstrates 6DOF sensor platform capabilities with a helicopter
+    orbiting around a ground target while the gimbal tracks it.
+
+    Platform: Rotary wing at 500m altitude
+    Sensor: TopLite III (MWIR)
+    Target: T-90 Tank
+    Orbit: 2km radius around target
+
+    Returns:
+        ExampleResult with simulated thermal image including motion effects
+    """
+    from eosim.library import (
+        ScenarioBuilder, run_scenario,
+        EnvironmentType, BackgroundType, Position3D,
+    )
+
+    # Target at origin
+    target_pos = Position3D(0, 0, 0, "m")
+
+    scenario = (
+        ScenarioBuilder()
+        .set_name("Helicopter Orbit - 6DOF Demo")
+        .set_sensor("toplite_iii", position=Position3D(2000, 0, 500, "m"))
+        .add_target("t90", position=target_pos, heading_deg=45)
+        .set_environment(env_type=EnvironmentType.CLEAR_DAY)
+        .set_background(BackgroundType.TERRAIN)
+        # Configure 6DOF platform
+        .set_platform(
+            platform_type="rotary_wing",
+            speed_ms=40.0,
+            heading_deg=90.0,
+        )
+        .set_gimbal_track(target_idx=0)  # Track the T-90
+        .set_orbit(center=target_pos, radius_m=2000.0)
+        .set_seed(seed)
+        .build()
+    )
+
+    result = run_scenario(scenario, verbose=True)
+
+    return ExampleResult(
+        name="helicopter_orbit",
+        description="Helicopter orbiting T-90 with gimbal tracking at 2km",
+        digital_image=result.digital_image,
+        temperature_map=result.temperature_map,
+        sensor_type="MWIR",
+        metadata={
+            **result.metadata,
+            "detection_metrics": result.detection_metrics,
+            "platform_motion": "6DOF orbit with target tracking",
+        },
+    )
+
+
+def example_fixed_wing_patrol(seed: int = 42) -> ExampleResult:
+    """
+    Example: Fixed-Wing Patrol with Waypoint Navigation
+
+    Demonstrates waypoint-based trajectory with a fixed-wing aircraft
+    flying a patrol pattern over a convoy.
+
+    Platform: Fixed wing at 3000m altitude, 150 m/s
+    Sensor: MX-15 (MWIR)
+    Targets: Military convoy (3 vehicles)
+
+    Returns:
+        ExampleResult with simulated thermal image including motion effects
+    """
+    from eosim.library import (
+        ScenarioBuilder, run_scenario,
+        EnvironmentType, BackgroundType, Position3D,
+    )
+
+    scenario = (
+        ScenarioBuilder()
+        .set_name("Fixed-Wing Patrol - Waypoint Demo")
+        .set_sensor("mx15", position=Position3D(0, -5000, 3000, "m"))
+        .add_target("m1_abrams", position_km=(0, 0, 0), heading_deg=0, name="lead")
+        .add_target("military_truck", position_km=(0.1, 0, 0), heading_deg=0, name="truck1")
+        .add_target("military_truck", position_km=(0.2, 0, 0), heading_deg=0, name="truck2")
+        .set_environment(env_type=EnvironmentType.DESERT_DAY)
+        .set_background(BackgroundType.DESERT)
+        # Configure 6DOF platform - fixed wing
+        .set_platform(
+            platform_type="fixed_wing",
+            speed_ms=150.0,
+            heading_deg=0.0,
+            orientation_deg=(0.0, -5.0, 0.0),  # Slight nose-down pitch
+        )
+        .set_gimbal_track(target_idx=0)  # Track lead vehicle
+        # Add waypoints for patrol pattern
+        .add_waypoint(Position3D(0, 0, 3000, "m"), time_s=0.0, heading_deg=0)
+        .add_waypoint(Position3D(0, 5000, 3000, "m"), time_s=30.0, heading_deg=0)
+        .add_waypoint(Position3D(3000, 5000, 3000, "m"), time_s=50.0, heading_deg=90)
+        .add_waypoint(Position3D(3000, 0, 3000, "m"), time_s=80.0, heading_deg=180)
+        .set_seed(seed)
+        .build()
+    )
+
+    result = run_scenario(scenario, verbose=True)
+
+    return ExampleResult(
+        name="fixed_wing_patrol",
+        description="Fixed-wing patrol over convoy with waypoints",
+        digital_image=result.digital_image,
+        temperature_map=result.temperature_map,
+        sensor_type="MWIR",
+        metadata={
+            **result.metadata,
+            "detection_metrics": result.detection_metrics,
+            "platform_motion": "6DOF waypoint patrol",
+        },
+    )
+
+
+def example_ground_vehicle_surveillance(seed: int = 42) -> ExampleResult:
+    """
+    Example: Ground Vehicle with Stabilized Sensor
+
+    Demonstrates ground vehicle platform with stabilized gimbal
+    observing personnel.
+
+    Platform: Ground vehicle (stationary with engine vibration)
+    Sensor: Catherine XP (LWIR)
+    Target: Personnel group
+
+    Returns:
+        ExampleResult with simulated thermal image including jitter effects
+    """
+    from eosim.library import (
+        ScenarioBuilder, run_scenario,
+        EnvironmentType, BackgroundType, Position3D,
+    )
+
+    scenario = (
+        ScenarioBuilder()
+        .set_name("Ground Vehicle Surveillance - Stabilization Demo")
+        .set_sensor("catherine_xp", position=Position3D(0, 0, 3, "m"))  # 3m height
+        .add_target("soldier_standing", position_km=(0.5, 0, 0), name="target1")
+        .add_target("soldier_prone", position_km=(0.52, 0.02, 0), name="target2")
+        .add_target("civilian", position_km=(0.48, -0.01, 0), name="target3")
+        .set_environment(env_type=EnvironmentType.CLEAR_NIGHT)
+        .set_background(BackgroundType.TERRAIN)
+        # Configure 6DOF platform - ground vehicle (stationary)
+        .set_platform(
+            platform_type="ground_vehicle",
+            speed_ms=0.0,  # Stationary
+            heading_deg=0.0,
+        )
+        .set_gimbal_track(target_idx=0)
+        .set_seed(seed)
+        .build()
+    )
+
+    result = run_scenario(scenario, verbose=True)
+
+    return ExampleResult(
+        name="ground_vehicle_surveillance",
+        description="Ground vehicle observing personnel with stabilized sensor",
+        digital_image=result.digital_image,
+        temperature_map=result.temperature_map,
+        sensor_type="LWIR",
+        metadata={
+            **result.metadata,
+            "detection_metrics": result.detection_metrics,
+            "platform_motion": "6DOF ground vehicle (stabilized)",
+        },
+    )
+
+
+def example_naval_ship_tracking(seed: int = 42) -> ExampleResult:
+    """
+    Example: Naval Platform Ship Tracking
+
+    Demonstrates naval platform motion (ship roll/pitch) while
+    tracking another vessel.
+
+    Platform: Naval surface vessel with ship motion
+    Sensor: MX-20 (MWIR)
+    Target: Patrol boat
+
+    Returns:
+        ExampleResult with simulated thermal image including ship motion effects
+    """
+    from eosim.library import (
+        ScenarioBuilder, run_scenario,
+        EnvironmentType, BackgroundType, Position3D,
+    )
+
+    scenario = (
+        ScenarioBuilder()
+        .set_name("Naval Ship Tracking - Sea Motion Demo")
+        .set_sensor("mx20", position=Position3D(0, 0, 20, "m"))  # 20m mast height
+        .add_target("patrol_boat", position_km=(5, 0, 0), heading_deg=270,
+                   velocity_ms=(10, 0, 0))  # Moving target
+        .set_environment(env_type=EnvironmentType.MARITIME)
+        .set_background(BackgroundType.WATER)
+        # Configure 6DOF platform - naval surface
+        .set_platform(
+            platform_type="naval_surface",
+            speed_ms=8.0,  # ~15 knots
+            heading_deg=45.0,
+            orientation_deg=(2.0, 1.0, 45.0),  # Slight roll/pitch from waves
+        )
+        .set_gimbal_track(target_idx=0)
+        .set_seed(seed)
+        .build()
+    )
+
+    result = run_scenario(scenario, verbose=True)
+
+    return ExampleResult(
+        name="naval_ship_tracking",
+        description="Naval platform tracking patrol boat with ship motion",
+        digital_image=result.digital_image,
+        temperature_map=result.temperature_map,
+        sensor_type="MWIR",
+        metadata={
+            **result.metadata,
+            "detection_metrics": result.detection_metrics,
+            "platform_motion": "6DOF naval with sea state effects",
+        },
+    )
+
+
+def example_tripod_static(seed: int = 42) -> ExampleResult:
+    """
+    Example: Tripod-Mounted Static Sensor
+
+    Demonstrates a tripod-mounted sensor with minimal motion effects
+    for comparison against moving platforms.
+
+    Platform: Fixed tripod (minimal vibration)
+    Sensor: Sophie MF (LWIR)
+    Target: Vehicle at close range
+
+    Returns:
+        ExampleResult with simulated thermal image (minimal motion effects)
+    """
+    from eosim.library import (
+        ScenarioBuilder, run_scenario,
+        EnvironmentType, BackgroundType, Position3D,
+    )
+
+    scenario = (
+        ScenarioBuilder()
+        .set_name("Tripod Static - Reference Demo")
+        .set_sensor("sophie_mf", position=Position3D(0, 0, 1.5, "m"))  # 1.5m tripod
+        .add_target("civilian_car", position_km=(0.3, 0, 0), heading_deg=90)
+        .set_environment(env_type=EnvironmentType.CLEAR_DAY)
+        .set_background(BackgroundType.URBAN)
+        # Configure 6DOF platform - tripod (minimal motion)
+        .set_platform(
+            platform_type="tripod",
+            speed_ms=0.0,
+            heading_deg=0.0,
+        )
+        .set_gimbal_track(target_idx=0)
+        .set_seed(seed)
+        .build()
+    )
+
+    result = run_scenario(scenario, verbose=True)
+
+    return ExampleResult(
+        name="tripod_static",
+        description="Tripod-mounted sensor with minimal motion effects",
+        digital_image=result.digital_image,
+        temperature_map=result.temperature_map,
+        sensor_type="LWIR",
+        metadata={
+            **result.metadata,
+            "detection_metrics": result.detection_metrics,
+            "platform_motion": "6DOF tripod (reference)",
+        },
+    )
+
+
 # Registry of library examples
 LIBRARY_EXAMPLES = {
     "mx15_vs_f16": example_mx15_vs_f16,
@@ -456,6 +742,12 @@ LIBRARY_EXAMPLES = {
     "uav_tracking": example_uav_tracking,
     "missile_detection": example_missile_detection,
     "helicopter_engagement": example_helicopter_engagement,
+    # 6DOF Platform Motion Examples
+    "helicopter_orbit": example_helicopter_orbit,
+    "fixed_wing_patrol": example_fixed_wing_patrol,
+    "ground_vehicle_surveillance": example_ground_vehicle_surveillance,
+    "naval_ship_tracking": example_naval_ship_tracking,
+    "tripod_static": example_tripod_static,
 }
 
 

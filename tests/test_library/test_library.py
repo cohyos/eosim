@@ -237,3 +237,214 @@ class TestEnvironmentConditions:
         fog = EnvironmentConditions.from_type(EnvironmentType.FOG)
         assert fog.visibility_km == 1.0
         assert fog.humidity_percent > 90
+
+
+class TestPlatformSystem:
+    """Tests for 6DOF sensor platform system."""
+
+    def test_create_platform(self):
+        """Test creating a sensor platform."""
+        from eosim.library import create_platform, PlatformType, Position3D
+
+        platform = create_platform(
+            platform_type="fixed_wing",
+            altitude_m=5000,
+            speed_ms=100,
+            heading_deg=45,
+        )
+
+        assert platform.platform_type == PlatformType.FIXED_WING
+        assert platform.state.position.z == pytest.approx(5000, rel=0.01)
+        assert platform.state.velocity.speed_ms == pytest.approx(100, rel=0.01)
+
+    def test_platform_state_update(self):
+        """Test platform state update."""
+        from eosim.library import create_platform
+
+        platform = create_platform(
+            platform_type="fixed_wing",
+            altitude_m=1000,
+            speed_ms=50,
+            heading_deg=0,  # North
+        )
+
+        initial_y = platform.state.position.y
+
+        # Update platform for 1 second
+        for _ in range(30):
+            platform.update(dt=1/30)
+
+        # Should have moved roughly 50m north (with some vibration noise)
+        assert platform.state.position.y > initial_y + 40
+
+    def test_gimbal_controller(self):
+        """Test gimbal controller functionality."""
+        from eosim.library import GimbalController, GimbalLimits, GimbalMode, PlatformState
+
+        gimbal = GimbalController(
+            limits=GimbalLimits(
+                azimuth_min_deg=-180,
+                azimuth_max_deg=180,
+                elevation_min_deg=-90,
+                elevation_max_deg=30,
+            )
+        )
+
+        # Test position command
+        gimbal.command_position(azimuth_deg=45, elevation_deg=-30)
+        assert gimbal.mode == GimbalMode.POSITION
+
+        # Update gimbal
+        platform_state = PlatformState()
+        for _ in range(100):
+            gimbal.update(dt=0.033, platform_state=platform_state)
+
+        # Should be close to commanded position
+        assert gimbal.state.azimuth_deg == pytest.approx(45, abs=1)
+        assert gimbal.state.elevation_deg == pytest.approx(-30, abs=1)
+
+    def test_gimbal_limits(self):
+        """Test gimbal limit enforcement."""
+        from eosim.library import GimbalLimits
+
+        limits = GimbalLimits(
+            azimuth_min_deg=-90,
+            azimuth_max_deg=90,
+            elevation_min_deg=-60,
+            elevation_max_deg=10,
+        )
+
+        # Test clamping
+        az, el = limits.clamp_position(180, -90)
+        assert az == 90  # Clamped to max
+        assert el == -60  # Clamped to min
+
+    def test_trajectory_generator(self):
+        """Test trajectory waypoint system."""
+        from eosim.library import (
+            TrajectoryGenerator, Waypoint, PlatformType, PlatformState,
+            Position3D, Velocity3D,
+        )
+
+        traj = TrajectoryGenerator(PlatformType.FIXED_WING)
+
+        # Add waypoints
+        traj.add_waypoint(Waypoint(
+            position=Position3D(0, 0, 1000, "m"),
+            time_s=0.0,
+        ))
+        traj.add_waypoint(Waypoint(
+            position=Position3D(1000, 0, 1000, "m"),
+            time_s=10.0,
+        ))
+
+        initial_state = PlatformState(
+            position=Position3D(0, 0, 1000, "m"),
+            velocity=Velocity3D(100, 0, 0, "m/s"),
+        )
+
+        # Get state at halfway
+        state = traj.get_state_at_time(5.0, initial_state)
+        assert state.position.x == pytest.approx(500, rel=0.1)
+
+    def test_platform_with_orbit(self):
+        """Test platform orbit functionality."""
+        from eosim.library import create_platform, Position3D
+
+        platform = create_platform(
+            platform_type="rotary_wing",
+            altitude_m=500,
+            speed_ms=40,
+        )
+
+        # Set orbit
+        center = Position3D(0, 0, 0, "m")
+        platform.set_orbit(
+            center=center,
+            radius_m=1000,
+            altitude_m=500,
+            speed_ms=40,
+        )
+
+        # Should have waypoints
+        assert len(platform.trajectory.waypoints) > 0
+
+    def test_orientation_to_rotation_matrix(self):
+        """Test orientation to rotation matrix conversion."""
+        from eosim.library import Orientation3D
+
+        # Identity - no rotation
+        orient = Orientation3D(roll_deg=0, pitch_deg=0, yaw_deg=0)
+        R = orient.to_rotation_matrix()
+        assert R[0, 0] == pytest.approx(1.0, abs=1e-6)
+        assert R[1, 1] == pytest.approx(1.0, abs=1e-6)
+        assert R[2, 2] == pytest.approx(1.0, abs=1e-6)
+
+        # 90 degree yaw
+        orient = Orientation3D(roll_deg=0, pitch_deg=0, yaw_deg=90)
+        R = orient.to_rotation_matrix()
+        # After 90 deg yaw, x-axis points in original y direction
+        assert R[1, 0] == pytest.approx(1.0, abs=1e-6)
+
+    def test_motion_blur_function(self):
+        """Test motion blur application."""
+        from eosim.library import apply_motion_blur
+
+        # Create test image
+        image = np.zeros((100, 100), dtype=np.float64)
+        image[45:55, 45:55] = 100  # Bright square
+
+        # Apply blur
+        blurred = apply_motion_blur(image, blur_vector=(5, 0), strength=1.0)
+
+        # Blurred image should be wider than original
+        assert blurred.shape == image.shape
+        # Center should still be bright but spread out
+        assert blurred[50, 50] > 0
+
+    def test_apply_jitter(self):
+        """Test jitter application."""
+        from eosim.library import apply_jitter
+
+        # Create test image
+        image = np.zeros((100, 100), dtype=np.float64)
+        image[50, 50] = 100
+
+        rng = np.random.default_rng(42)
+
+        # Apply jitter
+        jittered = apply_jitter(image, jitter_std_pixels=2.0, rng=rng)
+
+        assert jittered.shape == image.shape
+
+    def test_scenario_with_platform(self):
+        """Test running scenario with 6DOF platform."""
+        from eosim.library import ScenarioBuilder, run_scenario, EnvironmentType, BackgroundType
+
+        scenario = (
+            ScenarioBuilder()
+            .set_name("6DOF Test")
+            .set_sensor("generic_mwir_hd", altitude_m=1000)
+            .add_target("civilian_car", range_km=2.0)
+            .set_environment(env_type=EnvironmentType.CLEAR_DAY)
+            .set_background(BackgroundType.TERRAIN)
+            .set_platform(
+                platform_type="fixed_wing",
+                speed_ms=100,
+                heading_deg=0,
+            )
+            .set_gimbal_track(target_idx=0)
+            .set_seed(42)
+            .build()
+        )
+
+        assert scenario.platform_config is not None
+        assert scenario.platform_config.platform_type == "fixed_wing"
+        assert scenario.platform_config.gimbal_mode == "track_target"
+
+        # Run scenario
+        result = run_scenario(scenario)
+
+        # Should have platform info in metadata
+        assert "platform" in result.metadata
+        assert result.metadata["platform"]["type"] == "fixed_wing"

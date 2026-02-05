@@ -68,6 +68,12 @@ from eosim.examples.library_examples import (
     example_uav_tracking,
     example_missile_detection,
     example_helicopter_engagement,
+    # 6DOF Platform Motion Examples
+    example_helicopter_orbit,
+    example_fixed_wing_patrol,
+    example_ground_vehicle_surveillance,
+    example_naval_ship_tracking,
+    example_tripod_static,
     # Utility functions
     list_library_examples,
     get_library_example,
@@ -103,6 +109,12 @@ __all__ = [
     "example_uav_tracking",
     "example_missile_detection",
     "example_helicopter_engagement",
+    # 6DOF Platform Motion Examples
+    "example_helicopter_orbit",
+    "example_fixed_wing_patrol",
+    "example_ground_vehicle_surveillance",
+    "example_naval_ship_tracking",
+    "example_tripod_static",
     "list_library_examples",
     "get_library_example",
 ]

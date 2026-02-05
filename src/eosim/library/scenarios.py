@@ -450,6 +450,30 @@ class ScenarioOutput:
 
 
 @dataclass
+class PlatformConfig:
+    """Configuration for 6DOF sensor platform motion.
+
+    Attributes:
+        platform_type: Type of platform (fixed_wing, rotary_wing, etc.)
+        velocity: Initial platform velocity
+        orientation: Initial platform orientation
+        gimbal_mode: Gimbal operating mode
+        track_target_idx: Index of target to track (-1 for no tracking)
+        orbit_center: Center point for orbit mode
+        orbit_radius_m: Orbit radius
+        waypoints: List of waypoints for trajectory
+    """
+    platform_type: str = "fixed_wing"
+    velocity: Optional[Velocity3D] = None
+    orientation_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0)  # roll, pitch, yaw
+    gimbal_mode: str = "stabilized"
+    track_target_idx: int = 0  # Track first target by default
+    orbit_center: Optional[Position3D] = None
+    orbit_radius_m: float = 5000.0
+    waypoints: List[Any] = field(default_factory=list)
+
+
+@dataclass
 class Scenario:
     """Complete scenario definition.
 
@@ -471,6 +495,9 @@ class Scenario:
     # Output options
     compute_detection: bool = True
     save_intermediate: bool = False
+
+    # 6DOF Platform configuration
+    platform_config: Optional[PlatformConfig] = None
 
     @property
     def sensor(self) -> SensorSpec:
@@ -524,6 +551,7 @@ class ScenarioBuilder:
         self._duration_s: float = 0.0
         self._frame_rate_hz: float = 30.0
         self._seed: Optional[int] = None
+        self._platform_config: Optional[PlatformConfig] = None
 
     def set_name(self, name: str) -> "ScenarioBuilder":
         """Set scenario name."""
@@ -663,6 +691,123 @@ class ScenarioBuilder:
         self._seed = seed
         return self
 
+    def set_platform(
+        self,
+        platform_type: str = "fixed_wing",
+        velocity_ms: Optional[Tuple[float, float, float]] = None,
+        speed_ms: Optional[float] = None,
+        heading_deg: float = 0.0,
+        orientation_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    ) -> "ScenarioBuilder":
+        """Configure 6DOF sensor platform motion.
+
+        Args:
+            platform_type: Platform type ("fixed_wing", "rotary_wing", "ground_vehicle", etc.)
+            velocity_ms: Full velocity vector (vx, vy, vz) in m/s
+            speed_ms: Speed magnitude (used with heading if velocity not specified)
+            heading_deg: Heading in degrees (0=North, 90=East)
+            orientation_deg: Platform orientation as (roll, pitch, yaw) in degrees
+
+        Returns:
+            Self for chaining
+        """
+        if velocity_ms is not None:
+            vel = Velocity3D(*velocity_ms, "m/s")
+        elif speed_ms is not None:
+            heading_rad = np.deg2rad(heading_deg)
+            vel = Velocity3D(
+                speed_ms * np.sin(heading_rad),
+                speed_ms * np.cos(heading_rad),
+                0,
+                "m/s"
+            )
+        else:
+            vel = None
+
+        self._platform_config = PlatformConfig(
+            platform_type=platform_type,
+            velocity=vel,
+            orientation_deg=orientation_deg,
+        )
+        return self
+
+    def set_gimbal_track(self, target_idx: int = 0) -> "ScenarioBuilder":
+        """Set gimbal to track a specific target.
+
+        Args:
+            target_idx: Index of target to track (0-based)
+
+        Returns:
+            Self for chaining
+        """
+        if self._platform_config is None:
+            self._platform_config = PlatformConfig()
+        self._platform_config.gimbal_mode = "track_target"
+        self._platform_config.track_target_idx = target_idx
+        return self
+
+    def set_gimbal_point(self, azimuth_deg: float, elevation_deg: float) -> "ScenarioBuilder":
+        """Set gimbal to point at fixed angles.
+
+        Args:
+            azimuth_deg: Azimuth angle (0=forward, positive=right)
+            elevation_deg: Elevation angle (negative=down)
+
+        Returns:
+            Self for chaining
+        """
+        if self._platform_config is None:
+            self._platform_config = PlatformConfig()
+        self._platform_config.gimbal_mode = "position"
+        return self
+
+    def set_orbit(
+        self,
+        center: Position3D,
+        radius_m: float = 5000.0,
+    ) -> "ScenarioBuilder":
+        """Set platform to orbit around a point.
+
+        Args:
+            center: Center of orbit
+            radius_m: Orbit radius in meters
+
+        Returns:
+            Self for chaining
+        """
+        if self._platform_config is None:
+            self._platform_config = PlatformConfig()
+        self._platform_config.orbit_center = center
+        self._platform_config.orbit_radius_m = radius_m
+        return self
+
+    def add_waypoint(
+        self,
+        position: Position3D,
+        time_s: Optional[float] = None,
+        heading_deg: Optional[float] = None,
+    ) -> "ScenarioBuilder":
+        """Add a waypoint to the platform trajectory.
+
+        Args:
+            position: Waypoint position
+            time_s: Optional time to reach waypoint
+            heading_deg: Optional heading at waypoint
+
+        Returns:
+            Self for chaining
+        """
+        if self._platform_config is None:
+            self._platform_config = PlatformConfig()
+
+        waypoint = {
+            "position": position,
+            "time_s": time_s,
+            "heading_deg": heading_deg,
+        }
+        self._platform_config.waypoints.append(waypoint)
+        return self
+
     def build(self) -> Scenario:
         """Build the scenario."""
         if self._sensor_id is None:
@@ -681,6 +826,7 @@ class ScenarioBuilder:
             duration_s=self._duration_s,
             frame_rate_hz=self._frame_rate_hz,
             seed=self._seed,
+            platform_config=self._platform_config,
         )
 
 
@@ -810,17 +956,26 @@ def _render_target_at_position(
 def run_scenario(
     scenario: Scenario,
     verbose: bool = False,
+    apply_motion_effects: bool = True,
 ) -> ScenarioOutput:
     """Run a scenario simulation.
 
     Args:
         scenario: Scenario definition
         verbose: Print progress
+        apply_motion_effects: Whether to apply platform motion effects (blur, jitter)
 
     Returns:
         ScenarioOutput with simulation results
     """
     from eosim.pipeline import create_pipeline, SceneInput
+    from eosim.library.platform import (
+        SensorPlatform,
+        PlatformType,
+        GimbalMode,
+        Waypoint,
+        apply_platform_motion_effects,
+    )
 
     if verbose:
         print(f"Running scenario: {scenario.name}")
@@ -844,6 +999,60 @@ def run_scenario(
         sensor_type=sensor_type,
         seed=scenario.seed,
     )
+
+    # Create 6DOF platform if configured
+    platform = None
+    if scenario.platform_config is not None:
+        pc = scenario.platform_config
+
+        # Map string to PlatformType enum
+        try:
+            platform_type = PlatformType(pc.platform_type)
+        except ValueError:
+            platform_type = PlatformType.FIXED_WING
+
+        # Create platform
+        platform = SensorPlatform(
+            platform_type=platform_type,
+            initial_position=scenario.sensor_position,
+            initial_velocity=pc.velocity,
+            seed=scenario.seed,
+        )
+
+        # Configure gimbal tracking
+        if pc.gimbal_mode == "track_target" and scenario.targets:
+            track_idx = min(pc.track_target_idx, len(scenario.targets) - 1)
+            target = scenario.targets[track_idx]
+            platform.gimbal.track_point(
+                target.initial_position,
+                target.velocity,
+            )
+        elif pc.gimbal_mode == "position":
+            platform.gimbal.set_mode(GimbalMode.POSITION)
+        elif pc.gimbal_mode == "stabilized":
+            platform.gimbal.set_mode(GimbalMode.STABILIZED)
+
+        # Set up orbit if configured
+        if pc.orbit_center is not None:
+            platform.set_orbit(
+                center=pc.orbit_center,
+                radius_m=pc.orbit_radius_m,
+                altitude_m=scenario.sensor_position.to_meters().z,
+                speed_ms=pc.velocity.speed_ms if pc.velocity else 50.0,
+            )
+
+        # Add waypoints if configured
+        for wp_dict in pc.waypoints:
+            wp = Waypoint(
+                position=wp_dict["position"],
+                time_s=wp_dict.get("time_s"),
+                heading_deg=wp_dict.get("heading_deg"),
+            )
+            platform.trajectory.add_waypoint(wp)
+
+        if verbose:
+            print(f"  Platform: {platform_type.value}")
+            print(f"  Gimbal mode: {pc.gimbal_mode}")
 
     # Calculate pixels per meter based on range and FOV
     # Use first target for reference
@@ -898,34 +1107,88 @@ def run_scenario(
     )
 
     result = pipeline.run(scene, range_m=geometry.range_m)
+    digital_image = result.digital_image
+
+    # Apply platform motion effects if configured
+    platform_state_history = None
+    if platform is not None and apply_motion_effects:
+        # Update platform state for a few time steps to build history
+        dt = 1.0 / scenario.frame_rate_hz
+        for _ in range(10):
+            platform.update(dt)
+
+        # Store platform state history
+        platform_state_history = [{
+            "time_s": state.time_s,
+            "position": (state.position.x, state.position.y, state.position.z),
+            "orientation": (
+                state.orientation.roll_deg,
+                state.orientation.pitch_deg,
+                state.orientation.yaw_deg,
+            ),
+            "gimbal": (
+                platform.gimbal.state.azimuth_deg,
+                platform.gimbal.state.elevation_deg,
+            ),
+        } for state in platform._state_history[-5:]]
+
+        # Apply motion blur and jitter
+        # Use integration time from detector spec (convert ms to seconds)
+        integration_time = sensor_spec.detector_ir.integration_time_ms / 1000.0
+        digital_image = apply_platform_motion_effects(
+            digital_image,
+            platform,
+            integration_time_s=integration_time,
+        )
 
     # Calculate detection metrics if requested
     detection_metrics = None
     if scenario.compute_detection:
         detection_metrics = _compute_detection_metrics(
-            result.digital_image,
+            digital_image,
             target_pixels,
             temp_map,
             scenario.environment,
         )
 
+    # Build metadata
+    metadata = {
+        "scenario_name": scenario.name,
+        "sensor_id": scenario.sensor_id,
+        "sensor_name": sensor_spec.name,
+        "n_targets": scenario.n_targets,
+        "range_km": geometry.range_km,
+        "aspect_deg": geometry.aspect_angle_deg,
+        "background": scenario.background.value,
+        "environment": {
+            "ambient_temp_k": scenario.environment.ambient_temperature_k,
+            "visibility_km": scenario.environment.visibility_km,
+        },
+    }
+
+    # Add platform info to metadata
+    if platform is not None:
+        metadata["platform"] = {
+            "type": platform.platform_type.value,
+            "gimbal_mode": platform.gimbal.mode.value,
+            "position": (
+                platform.state.position.x,
+                platform.state.position.y,
+                platform.state.position.z,
+            ),
+            "gimbal_angles": (
+                platform.gimbal.state.azimuth_deg,
+                platform.gimbal.state.elevation_deg,
+            ),
+        }
+        if platform_state_history:
+            metadata["platform_history"] = platform_state_history
+
     return ScenarioOutput(
-        digital_image=result.digital_image,
+        digital_image=digital_image,
         temperature_map=temp_map,
         target_pixels=target_pixels,
-        metadata={
-            "scenario_name": scenario.name,
-            "sensor_id": scenario.sensor_id,
-            "sensor_name": sensor_spec.name,
-            "n_targets": scenario.n_targets,
-            "range_km": geometry.range_km,
-            "aspect_deg": geometry.aspect_angle_deg,
-            "background": scenario.background.value,
-            "environment": {
-                "ambient_temp_k": scenario.environment.ambient_temperature_k,
-                "visibility_km": scenario.environment.visibility_km,
-            },
-        },
+        metadata=metadata,
         detection_metrics=detection_metrics,
     )
 
