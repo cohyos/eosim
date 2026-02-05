@@ -65,7 +65,9 @@ def list_examples():
         "solar_panel_inspection": "Solar panel defect detection (LWIR at 30m)",
         "urban_surveillance": "Urban street scene (Visible at 200m)",
         # Realistic examples
-        "f16_500m": "★ F-16 fighter jet at 500m (MWIR) - REALISTIC",
+        "f16_500m": "★ F-16 thermal signature at 500m (MWIR) - REALISTIC",
+        "f16_visible": "★ F-16 visible/color rendering (RGB) - REALISTIC",
+        "f16_video": "★ F-16 flyby VIDEO (30 frames) - REALISTIC",
         "realistic_vehicle": "★ Vehicle with thermal gradients (LWIR) - REALISTIC",
         "realistic_person": "★ Person with thermal features (MWIR) - REALISTIC",
     }
@@ -122,6 +124,49 @@ def run_example(name: str, output_dir: Path, display: bool = True, seed: int = 4
     try:
         from PIL import Image
 
+        # Check for RGB image in metadata
+        if 'rgb_image' in result.metadata:
+            rgb = result.metadata['rgb_image']
+            rgb_uint8 = (rgb * 255).astype(np.uint8)
+            Image.fromarray(rgb_uint8).save(output_dir / f"{name}_rgb.png")
+            print(f"  Saved RGB: {output_dir / name}_rgb.png")
+
+        # Check for video frames
+        if 'video_frames' in result.metadata:
+            frames = result.metadata['video_frames']
+            fps = result.metadata.get('fps', 15)
+            print(f"  Video: {len(frames)} frames at {fps} fps")
+
+            # Save individual frames
+            frames_dir = output_dir / "frames"
+            frames_dir.mkdir(exist_ok=True)
+            for i, frame in enumerate(frames):
+                if frame.ndim == 3:
+                    Image.fromarray(frame).save(frames_dir / f"frame_{i:04d}.png")
+                else:
+                    frame_norm = ((frame - frame.min()) / (frame.max() - frame.min()) * 255).astype(np.uint8)
+                    Image.fromarray(frame_norm).save(frames_dir / f"frame_{i:04d}.png")
+            print(f"  Saved {len(frames)} frames to: {frames_dir}")
+
+            # Try to create video with OpenCV
+            try:
+                import cv2
+                video_path = output_dir / f"{name}.mp4"
+                h, w = frames[0].shape[:2]
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(str(video_path), fourcc, fps, (w, h), True)
+                for frame in frames:
+                    if frame.ndim == 3:
+                        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    else:
+                        gray = ((frame - frame.min()) / (frame.max() - frame.min()) * 255).astype(np.uint8)
+                        bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                    out.write(bgr)
+                out.release()
+                print(f"  Saved video: {video_path}")
+            except ImportError:
+                print("  Note: Install opencv-python for video output: pip install opencv-python")
+
         # Normalize digital image to 8-bit for PNG
         img = result.digital_image.astype(np.float64)
         img_min, img_max = img.min(), img.max()
@@ -132,19 +177,20 @@ def run_example(name: str, output_dir: Path, display: bool = True, seed: int = 4
 
         Image.fromarray(img_normalized).save(output_dir / f"{name}_output.png")
 
-        # Save temperature map as colored image
-        import matplotlib.pyplot as plt
-        import matplotlib.cm as cm
+        # Save temperature map as colored image (skip for visible/video)
+        if result.metadata.get('mode') not in ['visible', 'video']:
+            import matplotlib.pyplot as plt
+            import matplotlib.cm as cm
 
-        temp = result.temperature_map
-        temp_min, temp_max = temp.min(), temp.max()
-        if temp_max > temp_min:
-            temp_normalized = (temp - temp_min) / (temp_max - temp_min)
-        else:
-            temp_normalized = np.zeros_like(temp)
+            temp = result.temperature_map
+            temp_min, temp_max = temp.min(), temp.max()
+            if temp_max > temp_min:
+                temp_normalized = (temp - temp_min) / (temp_max - temp_min)
+            else:
+                temp_normalized = np.zeros_like(temp)
 
-        temp_colored = (cm.hot(temp_normalized)[:, :, :3] * 255).astype(np.uint8)
-        Image.fromarray(temp_colored).save(output_dir / f"{name}_temperature.png")
+            temp_colored = (cm.hot(temp_normalized)[:, :, :3] * 255).astype(np.uint8)
+            Image.fromarray(temp_colored).save(output_dir / f"{name}_temperature.png")
 
         print(f"  Saved: {output_dir / name}_*.png/npy")
 

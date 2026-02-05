@@ -1022,6 +1022,123 @@ def example_f16_500m(seed: int = 42) -> ExampleResult:
     )
 
 
+def example_f16_visible(seed: int = 42) -> ExampleResult:
+    """
+    Example 12: F-16 Visible Band Rendering
+
+    Detailed F-16 in visible/color camera showing:
+    - Realistic aircraft silhouette and shape
+    - Surface shading and lighting
+    - Canopy reflection/glint
+    - Afterburner glow
+    - Sky background
+
+    Sensor: Visible camera (color)
+    Scene: F-16 at 300m range
+    Background: Blue sky
+
+    Returns:
+        ExampleResult with RGB image
+    """
+    from eosim.examples.aircraft_models import render_f16_visible
+    import numpy as np
+
+    shape = (480, 640)
+
+    # Scale: at 300m with 50mm lens, 15m aircraft ~ 180 pixels
+    scale_pixels_per_meter = 12.0
+
+    rgb, silhouette, masks = render_f16_visible(
+        shape=shape,
+        center=(240, 320),
+        scale_pixels_per_meter=scale_pixels_per_meter,
+        heading_right=True,
+        lighting_angle_deg=45.0,
+        sky_brightness=0.75,
+        aircraft_albedo=0.35,
+        seed=seed,
+    )
+
+    # Convert to uint16 for consistency with other examples
+    digital_image = (rgb[:, :, 0] * 65535).astype(np.uint16)  # Grayscale version
+
+    return ExampleResult(
+        name="f16_visible",
+        description="F-16 visible/color rendering at 300m",
+        digital_image=digital_image,
+        temperature_map=rgb[:, :, 0],  # Use red channel as placeholder
+        sensor_type="Visible_RGB",
+        metadata={
+            "range_m": 300.0,
+            "band": "0.4-0.7 μm",
+            "target": "F-16",
+            "aspect": "side",
+            "rgb_image": rgb,  # Store full RGB
+            "mode": "visible",
+        },
+    )
+
+
+def example_f16_video(seed: int = 42) -> ExampleResult:
+    """
+    Example 13: F-16 Video Sequence
+
+    Generates multiple frames of F-16 flying across the field of view.
+    Can be saved as video file.
+
+    Sensor: Visible camera (color)
+    Scene: F-16 flyby
+    Frames: 30 frames
+
+    Returns:
+        ExampleResult with video frames in metadata
+    """
+    from eosim.examples.aircraft_models import generate_f16_video_frames
+    import numpy as np
+
+    shape = (480, 640)
+    n_frames = 30
+
+    # Generate visible video frames
+    frames = generate_f16_video_frames(
+        n_frames=n_frames,
+        shape=shape,
+        start_position=(240, 50),  # Start near left edge
+        velocity_pixels_per_frame=(0, 18),  # Move right
+        scale_pixels_per_meter=10.0,
+        mode="visible",
+        seed=seed,
+    )
+
+    # Use middle frame as the static image
+    mid_idx = len(frames) // 2
+    mid_frame = frames[mid_idx] if frames else np.zeros((*shape, 3), dtype=np.uint8)
+
+    # Convert to grayscale uint16 for consistency
+    if mid_frame.ndim == 3:
+        gray = (0.299 * mid_frame[:,:,0] + 0.587 * mid_frame[:,:,1] + 0.114 * mid_frame[:,:,2])
+        digital_image = (gray * 256).astype(np.uint16)
+    else:
+        digital_image = mid_frame.astype(np.uint16)
+
+    return ExampleResult(
+        name="f16_video",
+        description=f"F-16 flyby video ({n_frames} frames)",
+        digital_image=digital_image,
+        temperature_map=digital_image.astype(np.float64),
+        sensor_type="Visible_RGB",
+        metadata={
+            "range_m": 300.0,
+            "band": "0.4-0.7 μm",
+            "target": "F-16",
+            "n_frames": n_frames,
+            "video_frames": frames,  # Store all frames
+            "fps": 15,
+            "mode": "video",
+        },
+    )
+
+
 def example_realistic_vehicle(seed: int = 42) -> ExampleResult:
     """
     Example 12: Realistic Vehicle Thermal Signature (LWIR)
@@ -1166,6 +1283,8 @@ EXAMPLES = {
     "urban_surveillance": example_urban_surveillance,
     # Realistic examples with improved thermal signatures
     "f16_500m": example_f16_500m,
+    "f16_visible": example_f16_visible,
+    "f16_video": example_f16_video,
     "realistic_vehicle": example_realistic_vehicle,
     "realistic_person": example_realistic_person,
 }
