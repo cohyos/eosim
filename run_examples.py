@@ -64,6 +64,10 @@ def list_examples():
         "night_vision_swir": "Night surveillance scene (SWIR at 100m)",
         "solar_panel_inspection": "Solar panel defect detection (LWIR at 30m)",
         "urban_surveillance": "Urban street scene (Visible at 200m)",
+        # Realistic examples
+        "f16_10km": "★ F-16 fighter jet at 10km (MWIR) - REALISTIC",
+        "realistic_vehicle": "★ Vehicle with thermal gradients (LWIR) - REALISTIC",
+        "realistic_person": "★ Person with thermal features (MWIR) - REALISTIC",
     }
 
     print(f"\n{'#':<3} {'Name':<25} {'Description':<40}")

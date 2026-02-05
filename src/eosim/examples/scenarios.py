@@ -963,6 +963,192 @@ def example_urban_surveillance(seed: int = 42) -> ExampleResult:
 
 
 # ============================================================================
+# Realistic Examples (with proper thermal signatures)
+# ============================================================================
+
+def example_f16_10km(seed: int = 42) -> ExampleResult:
+    """
+    Example 11: F-16 Fighter at 10km Range (MWIR)
+
+    Realistic F-16 thermal signature at long range with:
+    - Hot exhaust nozzle and plume
+    - Aerodynamically heated leading edges
+    - Cold airframe skin at altitude
+    - Proper atmospheric attenuation
+
+    Sensor: MWIR HgCdTe (3-5 μm) - better for hot targets
+    Scene: F-16 at 10km range, 5km altitude
+    Background: Cold sky (~220K)
+
+    Returns:
+        ExampleResult with simulated thermal image
+    """
+    from eosim.pipeline import create_pipeline, SceneInput
+    from eosim.examples.realistic_scenes import create_f16_at_range
+
+    # Create realistic F-16 scene
+    temp_map, emissivity_map, scene_meta = create_f16_at_range(
+        shape=(480, 640),
+        range_km=10.0,
+        altitude_km=5.0,
+        seed=seed,
+    )
+
+    # Setup pipeline (MWIR better for detecting hot exhaust)
+    pipeline = create_pipeline(sensor_type="mwir", seed=seed)
+
+    scene = SceneInput(
+        temperature_map=temp_map,
+        emissivity_map=emissivity_map,
+        background_temperature=220.0,  # Cold sky
+    )
+    result = pipeline.run(scene, range_m=10000.0)
+
+    return ExampleResult(
+        name="f16_10km",
+        description="F-16 fighter jet at 10km range (MWIR)",
+        digital_image=result.digital_image,
+        temperature_map=temp_map,
+        sensor_type="MWIR",
+        metadata={
+            "range_m": 10000.0,
+            "band": "3-5 μm",
+            "target": "F-16",
+            "aspect": "side",
+            "altitude_km": 5.0,
+            "background": "cold_sky",
+            **scene_meta,
+        },
+    )
+
+
+def example_realistic_vehicle(seed: int = 42) -> ExampleResult:
+    """
+    Example 12: Realistic Vehicle Thermal Signature (LWIR)
+
+    Improved vehicle thermal model with:
+    - Temperature gradients across surfaces
+    - Hot engine compartment
+    - Hot exhaust
+    - Cool windows (reflecting sky)
+    - Warm tires (friction heating)
+    - Textured background
+
+    Sensor: LWIR HgCdTe (8-12 μm)
+    Scene: Vehicle at 500m range
+    Background: Road and vegetation
+
+    Returns:
+        ExampleResult with simulated thermal image
+    """
+    from eosim.pipeline import create_pipeline, SceneInput
+    from eosim.examples.realistic_scenes import create_realistic_vehicle, VehicleThermalParams
+
+    params = VehicleThermalParams(
+        body_temp_K=320.0,  # Hot from sun
+        engine_temp_K=365.0,
+        exhaust_temp_K=410.0,
+        tire_temp_K=325.0,
+        window_temp_K=275.0,  # Reflects cold sky
+        road_temp_K=310.0,
+        vegetation_temp_K=295.0,
+    )
+
+    temp_map, emissivity_map = create_realistic_vehicle(
+        shape=(480, 640),
+        params=params,
+        vehicle_type="sedan",
+        seed=seed,
+    )
+
+    pipeline = create_pipeline(sensor_type="lwir", seed=seed)
+
+    scene = SceneInput(
+        temperature_map=temp_map,
+        emissivity_map=emissivity_map,
+        background_temperature=270.0,
+    )
+    result = pipeline.run(scene, range_m=500.0)
+
+    return ExampleResult(
+        name="realistic_vehicle",
+        description="Realistic vehicle with thermal gradients (LWIR at 500m)",
+        digital_image=result.digital_image,
+        temperature_map=temp_map,
+        sensor_type="LWIR",
+        metadata={
+            "range_m": 500.0,
+            "band": "8-12 μm",
+            "target": "vehicle",
+            "vehicle_type": "sedan",
+            "background": "road/vegetation",
+            "realistic": True,
+        },
+    )
+
+
+def example_realistic_person(seed: int = 42) -> ExampleResult:
+    """
+    Example 13: Realistic Person Thermal Signature (MWIR)
+
+    Improved human thermal model with:
+    - Hot face (exposed skin)
+    - Cooler clothing
+    - Warm hands
+    - Proper body articulation
+    - Textured vegetation background
+
+    Sensor: MWIR HgCdTe (3-5 μm)
+    Scene: Person at 200m range
+    Background: Vegetation/forest
+
+    Returns:
+        ExampleResult with simulated thermal image
+    """
+    from eosim.pipeline import create_pipeline, SceneInput
+    from eosim.examples.realistic_scenes import create_realistic_person, PersonThermalParams
+
+    params = PersonThermalParams(
+        face_temp_K=307.0,
+        hands_temp_K=302.0,
+        clothing_temp_K=297.0,
+        hair_temp_K=300.0,
+        background_temp_K=288.0,
+    )
+
+    temp_map, emissivity_map = create_realistic_person(
+        shape=(480, 640),
+        params=params,
+        pose="standing",
+        seed=seed,
+    )
+
+    pipeline = create_pipeline(sensor_type="mwir", seed=seed)
+
+    scene = SceneInput(
+        temperature_map=temp_map,
+        emissivity_map=emissivity_map,
+    )
+    result = pipeline.run(scene, range_m=200.0)
+
+    return ExampleResult(
+        name="realistic_person",
+        description="Realistic person with thermal features (MWIR at 200m)",
+        digital_image=result.digital_image,
+        temperature_map=temp_map,
+        sensor_type="MWIR",
+        metadata={
+            "range_m": 200.0,
+            "band": "3-5 μm",
+            "target": "person",
+            "pose": "standing",
+            "background": "vegetation",
+            "realistic": True,
+        },
+    )
+
+
+# ============================================================================
 # Utility Functions
 # ============================================================================
 
@@ -978,6 +1164,10 @@ EXAMPLES = {
     "night_vision_swir": example_night_vision_swir,
     "solar_panel_inspection": example_solar_panel_inspection,
     "urban_surveillance": example_urban_surveillance,
+    # Realistic examples with improved thermal signatures
+    "f16_10km": example_f16_10km,
+    "realistic_vehicle": example_realistic_vehicle,
+    "realistic_person": example_realistic_person,
 }
 
 
