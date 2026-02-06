@@ -737,6 +737,30 @@ Thermal:
         if self.standalone:
             self.root.mainloop()
 
+    def _copy_snippet(self):
+        """Copy Python code snippet to clipboard."""
+        if not self.current_object_id:
+            return
+
+        snippet = (
+            f"# Add {self.current_object_id} to scenario\n"
+            f"scenario.add_target(\n"
+            f"    \"{self.current_object_id}\",\n"
+            f"    position_km=(10.0, 0.0, 1.0),  # x, y, z\n"
+            f"    heading_deg=45.0,\n"
+            f"    speed_mps=250.0\n"
+            f")"
+        )
+
+        self.root.clipboard_clear()
+        self.root.clipboard_append(snippet)
+        self.root.update()  # Required for clipboard to work
+
+        # Flash visual feedback
+        original_bg = self.info_text.cget("bg")
+        self.info_text.config(bg="#d0ffd0")
+        self.root.after(200, lambda: self.info_text.config(bg=original_bg))
+
 
 def launch_object_viewer():
     """Launch the standalone 3D object viewer.
@@ -752,28 +776,3 @@ def launch_object_viewer():
 # Allow running as script
 if __name__ == "__main__":
     launch_object_viewer()
-        self.root.destroy()
-        
-    def _copy_snippet(self):
-        """Copy Python code snippet to clipboard."""
-        if not self.current_object_id:
-            return
-            
-        snippet = (
-            f"# Add {self.current_object_id} to scenario\n"
-            f"scenario.add_target(\n"
-            f"    \"{self.current_object_id}\",\n"
-            f"    position_km=(10.0, 0.0, 1.0),  # x, y, z\n"
-            f"    heading_deg=45.0,\n"
-            f"    speed_mps=250.0\n"
-            f")"
-        )
-        
-        self.root.clipboard_clear()
-        self.root.clipboard_append(snippet)
-        self.root.update()  # Required for clipboard to work
-        
-        # Flash visual feedback
-        original_bg = self.info_text.cget("bg")
-        self.info_text.config(bg="#d0ffd0")
-        self.root.after(200, lambda: self.info_text.config(bg=original_bg))

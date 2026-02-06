@@ -304,109 +304,14 @@ MODEL_SOURCES = {
         "siso_id": "3.1.225.11.1.1",
     },
 }
-    "predator": {
-        "name": "MQ-1 Predator UAV",
-        "category": "aircraft",
-        "format": "obj",
-        "dimensions": {"length": 8.2, "width": 14.8, "height": 2.1},
-        "source": "procedural",
-        "license": "CC0",
-    },
 
-    # Vehicles
-    "m1_abrams": {
-        "name": "M1 Abrams Tank",
-        "category": "vehicle",
-        "format": "obj",
-        "dimensions": {"length": 9.8, "width": 3.7, "height": 2.4},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "t90": {
-        "name": "T-90 Battle Tank",
-        "category": "vehicle",
-        "format": "obj",
-        "dimensions": {"length": 9.5, "width": 3.8, "height": 2.2},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "humvee": {
-        "name": "HMMWV Humvee",
-        "category": "vehicle",
-        "format": "obj",
-        "dimensions": {"length": 4.6, "width": 2.2, "height": 1.8},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "pickup_truck": {
-        "name": "Pickup Truck",
-        "category": "vehicle",
-        "format": "obj",
-        "dimensions": {"length": 5.4, "width": 2.0, "height": 1.8},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "sedan": {
-        "name": "Sedan Car",
-        "category": "vehicle",
-        "format": "obj",
-        "dimensions": {"length": 4.5, "width": 1.8, "height": 1.4},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "suv": {
-        "name": "SUV",
-        "category": "vehicle",
-        "format": "obj",
-        "dimensions": {"length": 4.8, "width": 2.0, "height": 1.8},
-        "source": "procedural",
-        "license": "CC0",
-    },
 
-    # Ships
-    "destroyer": {
-        "name": "Naval Destroyer",
-        "category": "ship",
-        "format": "obj",
-        "dimensions": {"length": 155.0, "width": 20.0, "height": 45.0},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "carrier": {
-        "name": "Aircraft Carrier",
-        "category": "ship",
-        "format": "obj",
-        "dimensions": {"length": 333.0, "width": 77.0, "height": 75.0},
-        "source": "procedural",
-        "license": "CC0",
-    },
-
-    # People
-    "soldier_standing": {
-        "name": "Soldier Standing",
-        "category": "person",
-        "format": "obj",
-        "dimensions": {"length": 0.4, "width": 0.5, "height": 1.8},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "soldier_prone": {
-        "name": "Soldier Prone",
-        "category": "person",
-        "format": "obj",
-        "dimensions": {"length": 1.8, "width": 0.5, "height": 0.3},
-        "source": "procedural",
-        "license": "CC0",
-    },
-    "civilian": {
-        "name": "Civilian Person",
-        "category": "person",
-        "format": "obj",
-        "dimensions": {"length": 0.4, "width": 0.5, "height": 1.75},
-        "source": "procedural",
-        "license": "CC0",
-    },
-}
+# Check for trimesh availability
+try:
+    import trimesh
+    HAS_TRIMESH = True
+except ImportError:
+    HAS_TRIMESH = False
 
 
 @dataclass
@@ -423,7 +328,6 @@ class Mesh3D:
     vertices: NDArray
     faces: List[List[int]]
     normals: Optional[NDArray] = None
-    thermal_zones: Dict[int, str] = field(default_factory=dict)
     thermal_zones: Dict[int, str] = field(default_factory=dict)
     name: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -735,8 +639,11 @@ class ModelLibrary:
         elif category == "ship":
             return self._create_ship(length, width, height, model_id)
         elif category == "person":
-        elif category == "person":
             return self._create_person(length, width, height, model_id)
+        elif category == "helicopter":
+            return self._create_helicopter(length, width, height, model_id)
+        elif category == "uav":
+            return self._create_aircraft(length, width, height, model_id)
         elif category == "missile":
             return self._create_missile(length, width, height, model_id)
         elif category == "launcher":
@@ -1295,6 +1202,198 @@ class ModelLibrary:
             thermal_zones=zones
         )
 
+    def _create_helicopter(self, length: float, width: float, height: float,
+                          model_id: str) -> Mesh3D:
+        """Create helicopter mesh."""
+        verts = []
+        faces = []
+        zones = {}
+
+        l, w, h = length/2, width/2, height
+
+        # Main body (fuselage)
+        body_h = h * 0.4
+        body_w = w * 0.3
+        body_start = len(verts)
+        verts.extend([
+            [-l*0.4, -body_w, 0], [l*0.3, -body_w, 0],
+            [l*0.3, body_w, 0], [-l*0.4, body_w, 0],
+            [-l*0.4, -body_w, body_h], [l*0.3, -body_w, body_h],
+            [l*0.3, body_w, body_h], [-l*0.4, body_w, body_h],
+        ])
+        faces.extend([
+            [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7],
+            [4, 5, 6, 7],
+        ])
+        for i in range(5):
+            zones[i] = "fuselage"
+
+        # Cockpit (front)
+        ck_start = len(verts)
+        verts.extend([
+            [l*0.3, -body_w*0.8, body_h*0.2],
+            [l*0.6, -body_w*0.5, body_h*0.3],
+            [l*0.6, body_w*0.5, body_h*0.3],
+            [l*0.3, body_w*0.8, body_h*0.2],
+            [l*0.3, -body_w*0.8, body_h],
+            [l*0.5, -body_w*0.5, body_h*0.8],
+            [l*0.5, body_w*0.5, body_h*0.8],
+            [l*0.3, body_w*0.8, body_h],
+        ])
+        faces.extend([
+            [ck_start, ck_start+1, ck_start+5, ck_start+4],
+            [ck_start+1, ck_start+2, ck_start+6, ck_start+5],
+            [ck_start+2, ck_start+3, ck_start+7, ck_start+6],
+        ])
+        for i in range(3):
+            zones[len(faces) - 3 + i] = "cockpit"
+
+        # Tail boom
+        tail_start = len(verts)
+        tail_w = body_w * 0.3
+        verts.extend([
+            [-l*0.4, -tail_w, body_h*0.3],
+            [-l*0.4, tail_w, body_h*0.3],
+            [-l*0.4, tail_w, body_h*0.7],
+            [-l*0.4, -tail_w, body_h*0.7],
+            [-l, -tail_w*0.5, body_h*0.4],
+            [-l, tail_w*0.5, body_h*0.4],
+            [-l, tail_w*0.5, body_h*0.6],
+            [-l, -tail_w*0.5, body_h*0.6],
+        ])
+        faces.extend([
+            [tail_start, tail_start+1, tail_start+5, tail_start+4],
+            [tail_start+1, tail_start+2, tail_start+6, tail_start+5],
+            [tail_start+2, tail_start+3, tail_start+7, tail_start+6],
+            [tail_start+3, tail_start, tail_start+4, tail_start+7],
+        ])
+        for i in range(4):
+            zones[len(faces) - 4 + i] = "fuselage"
+
+        # Main rotor disk (simplified)
+        rotor_start = len(verts)
+        rotor_r = w
+        rotor_z = body_h + h * 0.1
+        for i in range(8):
+            angle = 2 * np.pi * i / 8
+            verts.append([rotor_r * np.cos(angle), rotor_r * np.sin(angle), rotor_z])
+        faces.append(list(range(rotor_start, rotor_start + 8)))
+        zones[len(faces) - 1] = "wings"
+
+        # Tail rotor
+        tr_start = len(verts)
+        tr_r = h * 0.25
+        tr_x = -l + 0.1
+        for i in range(6):
+            angle = 2 * np.pi * i / 6
+            verts.append([tr_x, w*0.15 + tr_r * np.cos(angle), body_h*0.5 + tr_r * np.sin(angle)])
+        faces.append(list(range(tr_start, tr_start + 6)))
+        zones[len(faces) - 1] = "wings"
+
+        return Mesh3D(
+            vertices=np.array(verts),
+            faces=faces,
+            thermal_zones=zones
+        )
+
+    def _create_missile(self, length: float, diameter: float, height: float,
+                       model_id: str) -> Mesh3D:
+        """Create missile mesh (cylinder + fins)."""
+        verts = []
+        faces = []
+        zones = {}
+
+        radius = diameter / 2 if diameter > 0.01 else 0.09
+        segments = 12
+
+        # Nose tip
+        verts.append([length/2, 0, 0])
+        nose_idx = 0
+
+        # Body rings
+        rings = [length/2 - length*0.2, -length/2 + length*0.1, -length/2]
+
+        for x in rings:
+            for i in range(segments):
+                angle = 2 * np.pi * i / segments
+                verts.append([x, radius * np.cos(angle), radius * np.sin(angle)])
+
+        # Nose faces
+        for i in range(segments):
+            faces.append([nose_idx, 1 + i, 1 + (i+1)%segments])
+            zones[len(faces)-1] = "body"
+
+        # Body faces
+        for r in range(len(rings)-1):
+            base1 = 1 + r * segments
+            base2 = 1 + (r+1) * segments
+            for i in range(segments):
+                next_i = (i+1)%segments
+                faces.append([base1 + i, base2 + i, base2 + next_i, base1 + next_i])
+                zones[len(faces)-1] = "body"
+
+        # Fins
+        fin_span = max(radius * 3, 0.15)
+        fin_root_x = -length/2 + length*0.15
+
+        fin_verts_start = len(verts)
+        verts.extend([
+            [fin_root_x + 0.1, 0, radius],
+            [fin_root_x, 0, fin_span],
+            [fin_root_x - 0.1, 0, fin_span],
+            [fin_root_x - 0.1, 0, radius],
+        ])
+
+        # 4 fins at 90 degree intervals
+        for i in range(4):
+            angle = np.pi/2 * i
+            rot = np.array([[1, 0, 0],
+                           [0, np.cos(angle), -np.sin(angle)],
+                           [0, np.sin(angle), np.cos(angle)]])
+
+            base_v = len(verts)
+            for j in range(4):
+                v = np.array(verts[fin_verts_start + j])
+                verts.append(list(rot @ v))
+
+            faces.append([base_v, base_v+1, base_v+2, base_v+3])
+            zones[len(faces)-1] = "fins"
+
+        return Mesh3D(vertices=np.array(verts), faces=faces, thermal_zones=zones)
+
+    def _create_launcher(self, length: float, width: float, height: float,
+                        model_id: str) -> Mesh3D:
+        """Create missile launcher mesh."""
+        # Truck base
+        base = self._create_vehicle(length, width, height*0.6, "truck")
+
+        # Launcher box/tubes
+        box_l, box_w, box_h = length*0.7, width*0.8, height*0.5
+        box = self._create_box(box_l, box_w, box_h)
+
+        # Rotate box up (elevated launch angle)
+        angle = np.radians(30)
+        c, s = np.cos(angle), np.sin(angle)
+        rot = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+        box.vertices = box.vertices @ rot.T
+
+        # Position box on truck bed
+        box.vertices += np.array([-length*0.2, 0, height * 0.7])
+
+        # Combine meshes
+        base_v_count = len(base.vertices)
+        vertices = np.vstack([base.vertices, box.vertices])
+
+        faces = list(base.faces)
+        for f in box.faces:
+            faces.append([i + base_v_count for i in f])
+
+        zones = dict(base.thermal_zones)
+        for i in range(len(base.faces), len(faces)):
+            zones[i] = "launcher"
+
+        return Mesh3D(vertices=vertices, faces=faces, thermal_zones=zones)
+
 
 # Global library instance
 _library: Optional[ModelLibrary] = None
@@ -1321,136 +1420,3 @@ def load_model(model_id: str) -> Optional[Mesh3D]:
 def get_model_info(model_id: str) -> Optional[Dict[str, Any]]:
     """Get model information."""
     return get_library().get_model_info(model_id)
-
-    def _create_person(self, length: float, width: float, height: float,
-                      model_id: str) -> Mesh3D:
-        """Create simple person mesh (boxes)."""
-        # Head
-        head = self._create_box(0.2, 0.2, 0.25)
-        # Body
-        body = self._create_box(0.3, 0.5, 0.6)
-        # Legs
-        legs = self._create_box(0.2, 0.4, 0.8)
-
-        # Offset vertices using direct array manipulation
-        # Head at top
-        head.vertices += [0, 0, height - 0.125] 
-        # Body in middle
-        body.vertices += [0, 0, height - 0.25 - 0.3]
-        # Legs at bottom
-        legs.vertices += [0, 0, 0.4]
-
-        # Combine
-        vertices = np.vstack([head.vertices, body.vertices, legs.vertices])
-        
-        # Offset faces
-        base = 0
-        faces = []
-        for m in [head, body, legs]:
-            for f in m.faces:
-                faces.append([i + base for i in f])
-            base += len(m.vertices)
-            
-        zones = {}
-        for i in range(len(head.faces)): zones[i] = "head"
-        for i in range(len(head.faces), len(head.faces)+len(body.faces)): zones[i] = "torso"
-        for i in range(len(head.faces)+len(body.faces), len(faces)): zones[i] = "legs"
-
-        return Mesh3D(vertices=vertices, faces=faces, thermal_zones=zones)
-
-    def _create_missile(self, length: float, diameter: float, height: float, model_id: str) -> Mesh3D:
-        """Create missile mesh (cylinder + fins)."""
-        verts = []
-        faces = []
-        zones = {}
-        
-        # Body cylinder
-        radius = diameter / 2
-        segments = 12
-        body_len = length * 0.9
-
-        # Nose tip
-        verts.append([length/2, 0, 0])
-        nose_idx = 0
-
-        # Body rings
-        rings = [length/2 - length*0.2, -length/2 + length*0.1, -length/2]
-        
-        for x in rings:
-            for i in range(segments):
-                angle = 2 * np.pi * i / segments
-                verts.append([x, radius * np.cos(angle), radius * np.sin(angle)])
-        
-        # Nose faces
-        for i in range(segments):
-            faces.append([nose_idx, 1 + i, 1 + (i+1)%segments])
-            zones[len(faces)-1] = "body"
-
-        # Body faces
-        for r in range(len(rings)-1):
-            base1 = 1 + r * segments
-            base2 = 1 + (r+1) * segments
-            for i in range(segments):
-                next_i = (i+1)%segments
-                faces.append([base1 + i, base2 + i, base2 + next_i, base1 + next_i])
-                zones[len(faces)-1] = "body"
-
-        # Fins
-        fin_span = diameter * 2
-        fin_root_x = -length/2 + length*0.15
-        
-        fin_verts_start = len(verts)
-        verts.extend([
-            [fin_root_x + 0.2, 0, radius], # Root leading
-            [fin_root_x, 0, fin_span],     # Tip
-            [fin_root_x - 0.2, 0, fin_span], # Tip trail
-            [fin_root_x - 0.2, 0, radius],   # Root trail
-        ])
-        
-        # 4 fins
-        for i in range(4):
-            angle = np.pi/2 * i
-            rot = np.array([[1,0,0],[0,np.cos(angle),-np.sin(angle)],[0,np.sin(angle),np.cos(angle)]])
-            
-            # Add rotated fin vertices
-            base_v = len(verts)
-            for j in range(4):
-                v = np.array(verts[fin_verts_start + j])
-                verts.append(rot @ v)
-            
-            faces.append([base_v, base_v+1, base_v+2, base_v+3])
-            zones[len(faces)-1] = "fins"
-
-        return Mesh3D(vertices=np.array(verts), faces=faces, thermal_zones=zones)
-
-    def _create_launcher(self, length: float, width: float, height: float, model_id: str) -> Mesh3D:
-        """Create missile launcher mesh."""
-        # Truck base
-        base = self._create_vehicle(length, width, height*0.6, "truck")
-        
-        # Launcher box/tubes
-        box_l, box_w, box_h = length*0.7, width*0.8, height*0.5
-        box = self._create_box(box_l, box_w, box_h)
-        
-        # Rotate box up
-        angle = np.radians(30)
-        c, s = np.cos(angle), np.sin(angle)
-        rot = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
-        box.vertices = box.vertices @ rot.T
-        
-        # Position box
-        box.vertices += [-length*0.2, 0, height * 0.7]
-
-        # Combine
-        base_v_count = len(base.vertices)
-        vertices = np.vstack([base.vertices, box.vertices])
-        
-        faces = base.faces
-        for f in box.faces:
-            faces.append([i + base_v_count for i in f])
-            
-        zones = base.thermal_zones
-        for i in range(len(base.faces), len(faces)):
-            zones[i] = "launcher"
-            
-        return Mesh3D(vertices=vertices, faces=faces, thermal_zones=zones)
