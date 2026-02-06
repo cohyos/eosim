@@ -43,6 +43,9 @@ dependencies = [
     "opencv-python>=4.8",
     "scikit-image>=0.21",
 
+    # 3D Model Loading
+    "trimesh>=3.23",
+
     # Visualization
     "matplotlib>=3.7",
 

@@ -133,11 +133,14 @@ class ObjectViewer3D:
 
         # Object info
         info_frame = ttk.LabelFrame(parent, text="Object Info", padding=5)
-        info_frame.pack(fill=tk.X, pady=5)
+        info_frame.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        self.info_text = tk.Text(info_frame, height=10, width=30, state=tk.DISABLED,
+        self.info_text = tk.Text(info_frame, height=15, width=30, state=tk.DISABLED,
                                  font=("Consolas", 9))
-        self.info_text.pack(fill=tk.X)
+        self.info_text.pack(fill=tk.BOTH, expand=True)
+
+        # Copy Code Button
+        ttk.Button(info_frame, text="Copy Python Snippet", command=self._copy_snippet).pack(fill=tk.X, pady=5)
 
     def _build_viewer_panel(self, parent):
         """Build the 3D viewer panel."""
@@ -287,9 +290,21 @@ class ObjectViewer3D:
                 elif "exhaust" in name or "plume" in name or "nozzle" in name:
                     exhaust_temp = thermal.base_temperature_k + delta_t
 
+        # Get metadata from model info if available
+        model_info = {}
+        if HAS_MODELS3D:
+            model_info = get_model_info(obj.id) or {}
+
+        siso = model_info.get("siso_id", "N/A")
+        source = model_info.get("source_url", "Internal") or "Internal"
+        license = model_info.get("license", "Unknown")
+
         info = f"""ID: {obj.id}
 Name: {obj.name}
 Category: {obj.category.value}
+SISO ID: {siso}
+Source: {source}
+License: {license}
 
 Dimensions:
   Length: {dims.length_m:.1f} m
@@ -737,3 +752,28 @@ def launch_object_viewer():
 # Allow running as script
 if __name__ == "__main__":
     launch_object_viewer()
+        self.root.destroy()
+        
+    def _copy_snippet(self):
+        """Copy Python code snippet to clipboard."""
+        if not self.current_object_id:
+            return
+            
+        snippet = (
+            f"# Add {self.current_object_id} to scenario\n"
+            f"scenario.add_target(\n"
+            f"    \"{self.current_object_id}\",\n"
+            f"    position_km=(10.0, 0.0, 1.0),  # x, y, z\n"
+            f"    heading_deg=45.0,\n"
+            f"    speed_mps=250.0\n"
+            f")"
+        )
+        
+        self.root.clipboard_clear()
+        self.root.clipboard_append(snippet)
+        self.root.update()  # Required for clipboard to work
+        
+        # Flash visual feedback
+        original_bg = self.info_text.cget("bg")
+        self.info_text.config(bg="#d0ffd0")
+        self.root.after(200, lambda: self.info_text.config(bg=original_bg))

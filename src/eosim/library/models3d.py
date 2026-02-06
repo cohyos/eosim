@@ -40,8 +40,10 @@ MODEL_SOURCES = {
         "category": "aircraft",
         "format": "obj",
         "dimensions": {"length": 15.0, "width": 9.5, "height": 5.1},
-        "source": "procedural",  # Will generate if not available
+        "source": "procedural",
+        "source_url": "https://www.turbosquid.com/Search/3D-Models/free/f-16",
         "license": "CC0",
+        "siso_id": "1.2.225.1.1.3",
     },
     "f35": {
         "name": "F-35 Lightning II",
@@ -49,7 +51,9 @@ MODEL_SOURCES = {
         "format": "obj",
         "dimensions": {"length": 15.7, "width": 10.7, "height": 4.4},
         "source": "procedural",
+        "source_url": "https://free3d.com/3d-model/f-35-lightning-ii-5462.html",
         "license": "CC0",
+        "siso_id": "1.2.225.1.1.6",
     },
     "su27": {
         "name": "Su-27 Flanker",
@@ -57,7 +61,9 @@ MODEL_SOURCES = {
         "format": "obj",
         "dimensions": {"length": 21.9, "width": 14.7, "height": 5.9},
         "source": "procedural",
+        "source_url": None,
         "license": "CC0",
+        "siso_id": "1.2.222.1.2.1",
     },
     "mig29": {
         "name": "MiG-29 Fulcrum",
@@ -65,7 +71,9 @@ MODEL_SOURCES = {
         "format": "obj",
         "dimensions": {"length": 17.3, "width": 11.4, "height": 4.7},
         "source": "procedural",
+        "source_url": "https://opengameart.org/content/mig",
         "license": "CC0",
+        "siso_id": "1.2.222.1.2.2",
     },
     "rafale": {
         "name": "Dassault Rafale",
@@ -73,7 +81,9 @@ MODEL_SOURCES = {
         "format": "obj",
         "dimensions": {"length": 15.3, "width": 10.9, "height": 5.3},
         "source": "procedural",
+        "source_url": None,
         "license": "CC0",
+        "siso_id": "1.2.71.1.1.1",
     },
     "b2": {
         "name": "B-2 Spirit Stealth Bomber",
@@ -81,24 +91,219 @@ MODEL_SOURCES = {
         "format": "obj",
         "dimensions": {"length": 21.0, "width": 52.4, "height": 5.2},
         "source": "procedural",
+        "source_url": None,
         "license": "CC0",
+        "siso_id": "1.2.225.2.2.1",
     },
     "apache": {
         "name": "AH-64 Apache Helicopter",
-        "category": "aircraft",
+        "category": "helicopter",
         "format": "obj",
         "dimensions": {"length": 17.7, "width": 14.6, "height": 4.0},
         "source": "procedural",
+        "source_url": "https://free3d.com/3d-model/ah-64d-apache-longbow-2432.html",
         "license": "CC0",
+        "siso_id": "1.2.225.20.1.1",
     },
     "blackhawk": {
         "name": "UH-60 Black Hawk",
-        "category": "aircraft",
+        "category": "helicopter",
         "format": "obj",
         "dimensions": {"length": 19.8, "width": 16.4, "height": 5.1},
         "source": "procedural",
+        "source_url": "https://sketchfab.com/nebulousflynn/collections/cc0-9e9b8c5442ab4b59ba16b6fa5e43b8da",
         "license": "CC0",
+        "siso_id": "1.2.225.21.1.1",
     },
+    "predator": {
+        "name": "MQ-1 Predator UAV",
+        "category": "uav",
+        "format": "obj",
+        "dimensions": {"length": 8.2, "width": 14.8, "height": 2.1},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "1.2.225.50.1.1",
+    },
+
+    # Vehicles
+    "m1_abrams": {
+        "name": "M1 Abrams Tank",
+        "category": "vehicle",
+        "format": "obj",
+        "dimensions": {"length": 9.8, "width": 3.7, "height": 2.4},
+        "source": "procedural",
+        "source_url": "https://opengameart.org/content/abrams-tank",
+        "license": "CC0",
+        "siso_id": "1.1.225.1.1.1",
+    },
+    "t90": {
+        "name": "T-90 Battle Tank",
+        "category": "vehicle",
+        "format": "obj",
+        "dimensions": {"length": 9.5, "width": 3.8, "height": 2.2},
+        "source": "procedural",
+        "source_url": "https://free3d.com/3d-model/t-90-ms-tagil-2545.html",
+        "license": "CC0",
+        "siso_id": "1.1.222.1.1.4",
+    },
+    "humvee": {
+        "name": "HMMWV Humvee",
+        "category": "vehicle",
+        "format": "obj",
+        "dimensions": {"length": 4.6, "width": 2.2, "height": 1.8},
+        "source": "procedural",
+        "source_url": "https://opengameart.org/content/cc0-3d-vehicles-and-cars",
+        "license": "CC0",
+        "siso_id": "1.1.225.6.1.1",
+    },
+    "pickup_truck": {
+        "name": "Pickup Truck",
+        "category": "vehicle",
+        "format": "obj",
+        "dimensions": {"length": 5.4, "width": 2.0, "height": 1.8},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "1.1.225.27.1.0",
+    },
+    "sedan": {
+        "name": "Sedan Car",
+        "category": "vehicle",
+        "format": "obj",
+        "dimensions": {"length": 4.5, "width": 1.8, "height": 1.4},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "1.1.225.80.1.0",
+    },
+    "suv": {
+        "name": "SUV",
+        "category": "vehicle",
+        "format": "obj",
+        "dimensions": {"length": 4.8, "width": 2.0, "height": 1.8},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "1.1.225.81.1.0",
+    },
+
+    # Ships
+    "destroyer": {
+        "name": "Naval Destroyer",
+        "category": "ship",
+        "format": "obj",
+        "dimensions": {"length": 155.0, "width": 20.0, "height": 45.0},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "1.3.225.4.1.1",
+    },
+    "carrier": {
+        "name": "Aircraft Carrier",
+        "category": "ship",
+        "format": "obj",
+        "dimensions": {"length": 333.0, "width": 77.0, "height": 75.0},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "1.3.225.12.1.1",
+    },
+    "patrol_boat": {
+        "name": "Patrol Boat",
+        "category": "ship",
+        "format": "obj",
+        "dimensions": {"length": 25.0, "width": 6.0, "height": 8.0},
+        "source": "procedural",
+        "source_url": "https://opengameart.org/content/ballistic-missile-submarine",
+        "license": "CC0",
+        "siso_id": "1.3.225.7.1.1",
+    },
+
+    # Missiles & Launchers
+    "aim120": {
+        "name": "AIM-120 AMRAAM",
+        "category": "missile",
+        "format": "obj",
+        "dimensions": {"length": 3.7, "width": 0.18, "height": 0.18},
+        "source": "procedural",
+        "source_url": "https://free3d.com/3d-models/missile",
+        "license": "CC0",
+        "siso_id": "2.1.225.1.1.3",
+    },
+    "agm114": {
+        "name": "AGM-114 Hellfire",
+        "category": "missile",
+        "format": "obj",
+        "dimensions": {"length": 1.6, "width": 0.18, "height": 0.18},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "2.1.225.1.3.4",
+    },
+    "tomahawk": {
+        "name": "Tomahawk Cruise Missile",
+        "category": "missile",
+        "format": "obj",
+        "dimensions": {"length": 6.25, "width": 0.52, "height": 0.52},
+        "source": "procedural",
+        "source_url": "https://free3d.com/3d-models/missile",
+        "license": "CC0",
+        "siso_id": "2.2.225.1.2.1",
+    },
+    "patriot_launcher": {
+        "name": "M901 Patriot Launcher",
+        "category": "launcher",
+        "format": "obj",
+        "dimensions": {"length": 10.0, "width": 2.5, "height": 3.5},
+        "source": "procedural",
+        "source_url": "https://free3d.com/3d-models/missile-launcher",
+        "license": "CC0",
+        "siso_id": "1.1.225.28.1.1",
+    },
+    "s400_launcher": {
+        "name": "S-400 Launcher",
+        "category": "launcher",
+        "format": "obj",
+        "dimensions": {"length": 12.0, "width": 3.0, "height": 3.8},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "1.1.222.28.2.3",
+    },
+
+    # People
+    "soldier_standing": {
+        "name": "Soldier Standing",
+        "category": "person",
+        "format": "obj",
+        "dimensions": {"length": 0.4, "width": 0.5, "height": 1.8},
+        "source": "procedural",
+        "source_url": "https://www.mixamo.com/",
+        "license": "Royalty Free",
+        "siso_id": "3.1.225.1.1.1",
+    },
+    "soldier_prone": {
+        "name": "Soldier Prone",
+        "category": "person",
+        "format": "obj",
+        "dimensions": {"length": 1.8, "width": 0.5, "height": 0.3},
+        "source": "procedural",
+        "source_url": None,
+        "license": "CC0",
+        "siso_id": "3.1.225.1.1.1",
+    },
+    "civilian": {
+        "name": "Civilian Person",
+        "category": "person",
+        "format": "obj",
+        "dimensions": {"length": 0.4, "width": 0.5, "height": 1.75},
+        "source": "procedural",
+        "source_url": "https://readyplayer.me/",
+        "license": "CC BY-NC",
+        "siso_id": "3.1.225.11.1.1",
+    },
+}
     "predator": {
         "name": "MQ-1 Predator UAV",
         "category": "aircraft",
@@ -219,7 +424,9 @@ class Mesh3D:
     faces: List[List[int]]
     normals: Optional[NDArray] = None
     thermal_zones: Dict[int, str] = field(default_factory=dict)
+    thermal_zones: Dict[int, str] = field(default_factory=dict)
     name: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.normals is None and len(self.vertices) > 0:
@@ -410,26 +617,58 @@ class ModelLibrary:
         if info is None:
             return None
 
-        # Check cache
-        cached_path = self.cache_dir / f"{model_id}.obj"
-        if cached_path.exists():
-            mesh = self._load_obj(cached_path)
-            if mesh:
-                mesh.name = info.get("name", model_id)
-                self._loaded_models[model_id] = mesh
-                return mesh
+        # Check for local file override in cache dir (supports OBJ, GLB, STL via trimesh if available)
+        for ext in [".obj", ".glb", ".stl", ".ply"]:
+            local_path = self.cache_dir / f"{model_id}{ext}"
+            if local_path.exists():
+                print(f"Loading local override: {local_path}")
+                if HAS_TRIMESH and ext != ".obj":
+                    mesh = self._load_with_trimesh(local_path)
+                else:
+                    mesh = self._load_obj(local_path)
+                
+                if mesh:
+                    mesh.name = info.get("name", model_id)
+                    mesh.metadata = info
+                    self._loaded_models[model_id] = mesh
+                    return mesh
 
         # Generate procedural model
         if info.get("source") == "procedural":
             mesh = self._generate_procedural(model_id, info)
             if mesh:
                 mesh.name = info.get("name", model_id)
+                mesh.metadata = info
                 self._loaded_models[model_id] = mesh
-                # Save to cache
-                self._save_obj(mesh, cached_path)
+                # Save to cache as OBJ for inspection
+                self._save_obj(mesh, self.cache_dir / f"{model_id}.obj")
                 return mesh
 
         return None
+
+    def _load_with_trimesh(self, path: Path) -> Optional[Mesh3D]:
+        """Load model using trimesh library."""
+        try:
+            import trimesh
+            scene = trimesh.load(path)
+            
+            # If scene, dump to single mesh
+            if isinstance(scene, trimesh.Scene):
+                mesh_data = scene.dump(concatenate=True)
+            else:
+                mesh_data = scene
+
+            if isinstance(mesh_data, list):
+                mesh_data = mesh_data[0]  # Take first mesh if list
+
+            return Mesh3D(
+                vertices=np.array(mesh_data.vertices),
+                faces=mesh_data.faces.tolist(),
+                normals=np.array(mesh_data.vertex_normals) if len(mesh_data.vertex_normals) > 0 else None,
+            )
+        except Exception as e:
+            print(f"Error loading with trimesh {path}: {e}")
+            return None
 
     def _load_obj(self, path: Path) -> Optional[Mesh3D]:
         """Load OBJ file."""
@@ -496,7 +735,12 @@ class ModelLibrary:
         elif category == "ship":
             return self._create_ship(length, width, height, model_id)
         elif category == "person":
+        elif category == "person":
             return self._create_person(length, width, height, model_id)
+        elif category == "missile":
+            return self._create_missile(length, width, height, model_id)
+        elif category == "launcher":
+            return self._create_launcher(length, width, height, model_id)
         else:
             return self._create_box(length, width, height)
 
@@ -1077,3 +1321,136 @@ def load_model(model_id: str) -> Optional[Mesh3D]:
 def get_model_info(model_id: str) -> Optional[Dict[str, Any]]:
     """Get model information."""
     return get_library().get_model_info(model_id)
+
+    def _create_person(self, length: float, width: float, height: float,
+                      model_id: str) -> Mesh3D:
+        """Create simple person mesh (boxes)."""
+        # Head
+        head = self._create_box(0.2, 0.2, 0.25)
+        # Body
+        body = self._create_box(0.3, 0.5, 0.6)
+        # Legs
+        legs = self._create_box(0.2, 0.4, 0.8)
+
+        # Offset vertices using direct array manipulation
+        # Head at top
+        head.vertices += [0, 0, height - 0.125] 
+        # Body in middle
+        body.vertices += [0, 0, height - 0.25 - 0.3]
+        # Legs at bottom
+        legs.vertices += [0, 0, 0.4]
+
+        # Combine
+        vertices = np.vstack([head.vertices, body.vertices, legs.vertices])
+        
+        # Offset faces
+        base = 0
+        faces = []
+        for m in [head, body, legs]:
+            for f in m.faces:
+                faces.append([i + base for i in f])
+            base += len(m.vertices)
+            
+        zones = {}
+        for i in range(len(head.faces)): zones[i] = "head"
+        for i in range(len(head.faces), len(head.faces)+len(body.faces)): zones[i] = "torso"
+        for i in range(len(head.faces)+len(body.faces), len(faces)): zones[i] = "legs"
+
+        return Mesh3D(vertices=vertices, faces=faces, thermal_zones=zones)
+
+    def _create_missile(self, length: float, diameter: float, height: float, model_id: str) -> Mesh3D:
+        """Create missile mesh (cylinder + fins)."""
+        verts = []
+        faces = []
+        zones = {}
+        
+        # Body cylinder
+        radius = diameter / 2
+        segments = 12
+        body_len = length * 0.9
+
+        # Nose tip
+        verts.append([length/2, 0, 0])
+        nose_idx = 0
+
+        # Body rings
+        rings = [length/2 - length*0.2, -length/2 + length*0.1, -length/2]
+        
+        for x in rings:
+            for i in range(segments):
+                angle = 2 * np.pi * i / segments
+                verts.append([x, radius * np.cos(angle), radius * np.sin(angle)])
+        
+        # Nose faces
+        for i in range(segments):
+            faces.append([nose_idx, 1 + i, 1 + (i+1)%segments])
+            zones[len(faces)-1] = "body"
+
+        # Body faces
+        for r in range(len(rings)-1):
+            base1 = 1 + r * segments
+            base2 = 1 + (r+1) * segments
+            for i in range(segments):
+                next_i = (i+1)%segments
+                faces.append([base1 + i, base2 + i, base2 + next_i, base1 + next_i])
+                zones[len(faces)-1] = "body"
+
+        # Fins
+        fin_span = diameter * 2
+        fin_root_x = -length/2 + length*0.15
+        
+        fin_verts_start = len(verts)
+        verts.extend([
+            [fin_root_x + 0.2, 0, radius], # Root leading
+            [fin_root_x, 0, fin_span],     # Tip
+            [fin_root_x - 0.2, 0, fin_span], # Tip trail
+            [fin_root_x - 0.2, 0, radius],   # Root trail
+        ])
+        
+        # 4 fins
+        for i in range(4):
+            angle = np.pi/2 * i
+            rot = np.array([[1,0,0],[0,np.cos(angle),-np.sin(angle)],[0,np.sin(angle),np.cos(angle)]])
+            
+            # Add rotated fin vertices
+            base_v = len(verts)
+            for j in range(4):
+                v = np.array(verts[fin_verts_start + j])
+                verts.append(rot @ v)
+            
+            faces.append([base_v, base_v+1, base_v+2, base_v+3])
+            zones[len(faces)-1] = "fins"
+
+        return Mesh3D(vertices=np.array(verts), faces=faces, thermal_zones=zones)
+
+    def _create_launcher(self, length: float, width: float, height: float, model_id: str) -> Mesh3D:
+        """Create missile launcher mesh."""
+        # Truck base
+        base = self._create_vehicle(length, width, height*0.6, "truck")
+        
+        # Launcher box/tubes
+        box_l, box_w, box_h = length*0.7, width*0.8, height*0.5
+        box = self._create_box(box_l, box_w, box_h)
+        
+        # Rotate box up
+        angle = np.radians(30)
+        c, s = np.cos(angle), np.sin(angle)
+        rot = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+        box.vertices = box.vertices @ rot.T
+        
+        # Position box
+        box.vertices += [-length*0.2, 0, height * 0.7]
+
+        # Combine
+        base_v_count = len(base.vertices)
+        vertices = np.vstack([base.vertices, box.vertices])
+        
+        faces = base.faces
+        for f in box.faces:
+            faces.append([i + base_v_count for i in f])
+            
+        zones = base.thermal_zones
+        for i in range(len(base.faces), len(faces)):
+            zones[i] = "launcher"
+            
+        return Mesh3D(vertices=vertices, faces=faces, thermal_zones=zones)

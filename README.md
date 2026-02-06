@@ -60,6 +60,7 @@ pip install -e .
 - `eosim.radiance` - Planck functions, surface radiance
 - `eosim.atmosphere` - Atmospheric transmission
 - `eosim.pipeline` - Simulation engine and effects
+- `eosim.library` - **NEW**: 3D Object Library & Viewer ([Guide](docs/3D_MODELS_GUIDE.md))
 - `eosim.output` - File I/O (NumPy, PNG, TIFF, ENVI)
 - `eosim.examples` - Example scenarios
 
