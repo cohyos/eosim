@@ -2,7 +2,7 @@
 EOSIM 3D Object Viewer.
 
 Provides visualization of 3D objects from the object library, showing:
-- 3D wireframe/surface views
+- 3D wireframe/surface views with proper mesh rendering
 - Multiple viewing angles
 - Thermal profile information
 - Object dimensions
@@ -23,6 +23,13 @@ from tkinter import ttk
 from typing import Optional, Tuple, List, Dict, Any
 import numpy as np
 from numpy.typing import NDArray
+
+# Import 3D model library
+try:
+    from eosim.library.models3d import load_model, list_models, get_model_info, Mesh3D
+    HAS_MODELS3D = True
+except ImportError:
+    HAS_MODELS3D = False
 
 
 class ObjectViewer3D:
@@ -318,23 +325,37 @@ Thermal:
         if cw < 10 or ch < 10:
             cw, ch = 600, 400
 
-        # Generate silhouette at current angle
-        resolution = (ch - 40, cw - 40)
-        try:
-            temp_map, emis_map = self.current_object.get_signature(
-                resolution=resolution,
-                aspect_angle_deg=self.azimuth,
-                elevation_angle_deg=self.elevation,
-            )
+        # Try to use 3D mesh model first
+        mesh_rendered = False
+        if HAS_MODELS3D and self.current_object_id:
+            mesh = load_model(self.current_object_id)
+            if mesh is not None:
+                try:
+                    # Render 3D mesh
+                    self._draw_3d_mesh(self.canvas, mesh, 20, 20, cw - 40, ch - 40,
+                                      self.azimuth, self.elevation)
+                    mesh_rendered = True
+                except Exception as e:
+                    print(f"Mesh render error: {e}")
 
-            # Convert to display
-            self._draw_thermal_image(self.canvas, temp_map, 20, 20, cw - 40, ch - 40)
+        if not mesh_rendered:
+            # Fall back to thermal signature rendering
+            resolution = (ch - 40, cw - 40)
+            try:
+                temp_map, emis_map = self.current_object.get_signature(
+                    resolution=resolution,
+                    aspect_angle_deg=self.azimuth,
+                    elevation_angle_deg=self.elevation,
+                )
 
-        except Exception as e:
-            self.canvas.create_text(
-                cw // 2, ch // 2, text=f"Error: {e}",
-                fill="red", font=("Segoe UI", 10)
-            )
+                # Convert to display
+                self._draw_thermal_image(self.canvas, temp_map, 20, 20, cw - 40, ch - 40)
+
+            except Exception as e:
+                self.canvas.create_text(
+                    cw // 2, ch // 2, text=f"Error: {e}",
+                    fill="red", font=("Segoe UI", 10)
+                )
 
         # Draw info overlay
         self.canvas.create_text(
@@ -352,6 +373,120 @@ Thermal:
             cw - 10, 10, text=f"L: {dims.length_m:.1f}m × W: {dims.width_m:.1f}m × H: {dims.height_m:.1f}m",
             anchor=tk.NE, fill="cyan", font=("Segoe UI", 9)
         )
+
+    def _draw_3d_mesh(self, canvas: tk.Canvas, mesh: "Mesh3D",
+                      x: int, y: int, width: int, height: int,
+                      azimuth: float, elevation: float):
+        """Render 3D mesh on canvas with shading."""
+        # Create rotation matrices
+        az = np.radians(azimuth)
+        el = np.radians(elevation)
+
+        Ry = np.array([
+            [np.cos(az), 0, np.sin(az)],
+            [0, 1, 0],
+            [-np.sin(az), 0, np.cos(az)]
+        ])
+        Rx = np.array([
+            [1, 0, 0],
+            [0, np.cos(el), -np.sin(el)],
+            [0, np.sin(el), np.cos(el)]
+        ])
+
+        R = Rx @ Ry
+        rotated = mesh.vertices @ R.T
+
+        # Project to 2D (orthographic)
+        x_min, x_max = rotated[:, 0].min(), rotated[:, 0].max()
+        y_min, y_max = rotated[:, 1].min(), rotated[:, 1].max()
+        z_min, z_max = rotated[:, 2].min(), rotated[:, 2].max()
+
+        margin = 0.1
+        x_range = max(x_max - x_min, 0.001)
+        y_range = max(y_max - y_min, 0.001)
+        scale = min((1 - 2*margin) * width / x_range, (1 - 2*margin) * height / y_range)
+
+        cx = (x_max + x_min) / 2
+        cy = (y_max + y_min) / 2
+
+        # Sort faces by depth (painter's algorithm)
+        face_depths = []
+        for i, face in enumerate(mesh.faces):
+            if len(face) >= 3:
+                z_avg = np.mean([rotated[vi, 2] for vi in face[:4]])
+                face_depths.append((i, z_avg))
+
+        face_depths.sort(key=lambda x: x[1])  # Back to front
+
+        # Draw faces
+        light_dir = np.array([0.3, -0.5, 0.8])
+        light_dir = light_dir / np.linalg.norm(light_dir)
+
+        for face_idx, _ in face_depths:
+            face = mesh.faces[face_idx]
+            if len(face) < 3:
+                continue
+
+            # Get projected points
+            pts = []
+            for vi in face[:4]:  # Max 4 vertices
+                px = x + int((rotated[vi, 0] - cx) * scale + width / 2)
+                py = y + int((rotated[vi, 1] - cy) * scale + height / 2)
+                pts.append((px, py))
+
+            # Calculate face normal for shading
+            v0 = rotated[face[0]]
+            v1 = rotated[face[1]]
+            v2 = rotated[face[2]]
+            normal = np.cross(v1 - v0, v2 - v0)
+            norm = np.linalg.norm(normal)
+            if norm > 0:
+                normal = normal / norm
+            else:
+                normal = np.array([0, 0, 1])
+
+            # Back-face culling
+            if normal[2] < -0.1:
+                continue
+
+            # Calculate shading
+            shade = max(0.2, min(1.0, np.dot(normal, light_dir) * 0.5 + 0.5))
+
+            # Get thermal zone color
+            zone = mesh.thermal_zones.get(face_idx, "body")
+            base_color = self._get_zone_color(zone)
+
+            # Apply shading
+            r = int(base_color[0] * shade)
+            g = int(base_color[1] * shade)
+            b = int(base_color[2] * shade)
+            color = f"#{r:02x}{g:02x}{b:02x}"
+
+            # Draw face
+            if len(pts) >= 3:
+                canvas.create_polygon(pts, fill=color, outline="#333333", width=1)
+
+    def _get_zone_color(self, zone: str) -> Tuple[int, int, int]:
+        """Get base color for thermal zone."""
+        zone_colors = {
+            "fuselage": (100, 120, 140),
+            "wings": (90, 110, 130),
+            "cockpit": (60, 80, 100),
+            "exhaust": (255, 100, 50),
+            "nozzle": (255, 150, 80),
+            "engine": (200, 80, 60),
+            "body": (120, 130, 140),
+            "cabin": (80, 100, 120),
+            "wheels": (60, 60, 70),
+            "head": (220, 180, 160),
+            "torso": (100, 110, 90),
+            "legs": (80, 90, 70),
+            "hands": (200, 160, 140),
+            "hull": (100, 110, 120),
+            "deck": (90, 100, 110),
+            "superstructure": (110, 120, 130),
+        }
+        return zone_colors.get(zone, (100, 100, 100))
 
     def _update_multiview(self):
         """Update the multi-angle view panel."""
