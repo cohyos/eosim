@@ -4,6 +4,13 @@ Human/personnel target models for EOSIM.
 Provides thermal signature models for people in various poses,
 activities, and environmental conditions.
 
+Features anatomically accurate thermal zones:
+- Head/face: 308K (highest exposed skin temperature)
+- Hands: 305K (often exposed, blood flow dependent)
+- Torso: 295K (through clothing insulation)
+- Legs: 298K (through clothing)
+- Proper humanoid proportions for all poses
+
 Example Usage:
 --------------
 # Example 1: Standing person at different activity levels
@@ -27,6 +34,11 @@ Example Usage:
 ...     equipment=["backpack", "rifle"],
 ... )
 >>> signature = soldier.get_signature(aspect_angle_deg=90)
+
+# Example 4: Use enhanced humanoid thermal zones
+>>> person = PersonTarget.standing(activity="walking")
+>>> sig = person.get_signature(use_enhanced_shape=True)
+>>> print(f"Head temp: {sig.max_temperature:.1f}K")  # ~308K
 """
 
 from dataclasses import dataclass, field
@@ -43,6 +55,7 @@ from eosim.targets.base import (
     MaterialType,
     TargetGroup,
 )
+from eosim.targets.shapes import HumanoidShape, ThermalZone, ThermalZoneConfig
 
 
 @dataclass
@@ -241,10 +254,42 @@ class PersonTarget(Target):
         resolution: tuple[int, int] = (48, 24),
         aspect_angle_deg: float = 0.0,
         elevation_angle_deg: float = 0.0,
+        use_enhanced_shape: bool = True,
     ) -> TargetSignature:
-        """Generate person thermal signature."""
+        """Generate person thermal signature.
+
+        Args:
+            resolution: Output resolution (height, width)
+            aspect_angle_deg: Viewing angle
+            elevation_angle_deg: Elevation viewing angle
+            use_enhanced_shape: Use humanoid model with anatomical thermal zones
+
+        Returns:
+            TargetSignature with temperature and emissivity maps
+        """
         h, w = resolution
 
+        if use_enhanced_shape:
+            # Use enhanced humanoid shape with distinct thermal zones
+            humanoid = HumanoidShape(
+                height_m=self.geometry.length_m,
+                pose=self.pose,
+                activity=self.activity,
+                clothing_coverage=self.clothing.coverage,
+                ambient_k=self.ambient_temperature_k,
+            )
+
+            temp_map, emis_map, mask = humanoid.render(resolution, aspect_angle_deg)
+
+            return TargetSignature(
+                temperature_map=temp_map,
+                emissivity_map=emis_map,
+                geometry=self.geometry,
+                aspect_angle_deg=aspect_angle_deg,
+                elevation_angle_deg=elevation_angle_deg,
+            )
+
+        # Legacy rendering path
         # Create body shape based on pose
         mask = self._create_body_shape(resolution, aspect_angle_deg)
 
@@ -264,6 +309,7 @@ class PersonTarget(Target):
             emissivity_map=emis_map,
             geometry=self.geometry,
             aspect_angle_deg=aspect_angle_deg,
+            elevation_angle_deg=elevation_angle_deg,
         )
 
     def _create_body_shape(
