@@ -266,6 +266,19 @@ class ObjectViewer3D:
 
         obj = self.current_object
         dims = obj.dimensions
+        thermal = obj.thermal
+
+        # Extract hot spot temperatures if available
+        engine_temp = thermal.base_temperature_k
+        exhaust_temp = thermal.base_temperature_k
+        if thermal.hot_spots:
+            for spot in thermal.hot_spots:
+                name = spot[0].lower() if isinstance(spot[0], str) else ""
+                delta_t = spot[3] if len(spot) > 3 else 0
+                if "engine" in name:
+                    engine_temp = thermal.base_temperature_k + delta_t
+                elif "exhaust" in name or "plume" in name or "nozzle" in name:
+                    exhaust_temp = thermal.base_temperature_k + delta_t
 
         info = f"""ID: {obj.id}
 Name: {obj.name}
@@ -277,10 +290,11 @@ Dimensions:
   Height: {dims.height_m:.1f} m
 
 Thermal:
-  Base: {obj.thermal.base_temperature_k:.0f} K
-  Engine: {obj.thermal.engine_temperature_k:.0f} K
-  Plume: {obj.thermal.exhaust_temperature_k:.0f} K
-  Emissivity: {obj.thermal.emissivity:.2f}
+  Base: {thermal.base_temperature_k:.0f} K
+  Engine: {engine_temp:.0f} K
+  Exhaust: {exhaust_temp:.0f} K
+  Emissivity: {thermal.emissivity:.2f}
+  Hot Spots: {len(thermal.hot_spots)}
 
 {obj.description[:100]}..."""
 
@@ -404,11 +418,23 @@ Thermal:
 
         thermal = self.current_object.thermal
 
+        # Extract hot spot temperatures if available
+        engine_temp = thermal.base_temperature_k
+        exhaust_temp = thermal.base_temperature_k
+        if thermal.hot_spots:
+            for spot in thermal.hot_spots:
+                name = spot[0].lower() if isinstance(spot[0], str) else ""
+                delta_t = spot[3] if len(spot) > 3 else 0
+                if "engine" in name:
+                    engine_temp = thermal.base_temperature_k + delta_t
+                elif "exhaust" in name or "plume" in name or "nozzle" in name:
+                    exhaust_temp = thermal.base_temperature_k + delta_t
+
         # Draw temperature bars
         temps = [
             ("Base", thermal.base_temperature_k, "#4a69bd"),
-            ("Engine", thermal.engine_temperature_k, "#e55039"),
-            ("Exhaust", thermal.exhaust_temperature_k, "#f39c12"),
+            ("Engine", engine_temp, "#e55039"),
+            ("Exhaust", exhaust_temp, "#f39c12"),
         ]
 
         bar_width = 80
@@ -416,6 +442,8 @@ Thermal:
         spacing = 20
 
         max_temp = max(t[1] for t in temps)
+        if max_temp < 1:
+            max_temp = 1  # Avoid division by zero
         start_x = 10
 
         for i, (label, temp, color) in enumerate(temps):
