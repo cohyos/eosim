@@ -111,6 +111,23 @@ def list_object_categories():
     return list_categories()
 
 
+def launch_object_viewer():
+    """Launch the 3D object viewer.
+
+    Provides a visual preview of objects in the library, showing:
+    - 3D thermal signature at different viewing angles
+    - Object dimensions and specifications
+    - Thermal profile (base, engine, exhaust temperatures)
+    - Multi-angle comparison view
+
+    Example:
+        >>> from eosim.library import launch_object_viewer
+        >>> launch_object_viewer()
+    """
+    from eosim.library.object_viewer import launch_object_viewer as _launch
+    return _launch()
+
+
 __all__ = [
     # Objects
     "ObjectLibrary",
@@ -169,5 +186,6 @@ __all__ = [
     "apply_platform_motion_effects",
     # GUI
     "launch_scenario_builder",
+    "launch_object_viewer",
     "list_object_categories",
 ]

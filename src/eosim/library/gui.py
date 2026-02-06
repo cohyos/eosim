@@ -126,6 +126,12 @@ class ScenarioBuilderGUI:
         menubar.add_cascade(label="Run", menu=run_menu)
         run_menu.add_command(label="Run Scenario", command=self._run_scenario, accelerator="F5")
 
+        # Tools menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="Object Viewer...", command=self._open_object_viewer)
+        tools_menu.add_command(label="Sensor Browser...", command=self._open_sensor_browser)
+
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -278,8 +284,15 @@ class ScenarioBuilderGUI:
         self.target_name_var = tk.StringVar(value="")
         ttk.Entry(add_frame, textvariable=self.target_name_var, width=20).grid(row=5, column=1, sticky=tk.W)
 
-        add_btn = ttk.Button(add_frame, text="Add Target", command=self._add_target)
-        add_btn.grid(row=6, column=0, columnspan=2, pady=10)
+        # Buttons row
+        btn_frame = ttk.Frame(add_frame)
+        btn_frame.grid(row=6, column=0, columnspan=2, pady=10)
+
+        preview_btn = ttk.Button(btn_frame, text="Preview 3D", command=self._preview_object)
+        preview_btn.pack(side=tk.LEFT, padx=5)
+
+        add_btn = ttk.Button(btn_frame, text="Add Target", command=self._add_target)
+        add_btn.pack(side=tk.LEFT, padx=5)
 
         # Target list
         list_frame = ttk.LabelFrame(parent, text="Target List", padding=10)
@@ -537,6 +550,21 @@ Optics:
         self.sensor_info.delete(1.0, tk.END)
         self.sensor_info.insert(tk.END, info)
         self.sensor_info.config(state=tk.DISABLED)
+
+    def _preview_object(self):
+        """Preview the selected object in 3D viewer."""
+        obj_id = self.object_var.get()
+        if not obj_id:
+            messagebox.showwarning("Warning", "Please select an object first")
+            return
+
+        try:
+            from eosim.library.object_viewer import ObjectViewer3D
+            viewer = ObjectViewer3D(self.root)
+            viewer.show_object(obj_id)
+            self._update_status(f"Previewing: {obj_id}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to preview object: {e}")
 
     def _add_target(self):
         """Add a target to the list."""
@@ -831,6 +859,79 @@ Detection Metrics:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to export: {e}")
 
+    def _open_object_viewer(self):
+        """Open the 3D object viewer."""
+        try:
+            from eosim.library.object_viewer import ObjectViewer3D
+            viewer = ObjectViewer3D(self.root)
+            self._update_status("Object Viewer opened")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open Object Viewer: {e}")
+
+    def _open_sensor_browser(self):
+        """Open the sensor browser."""
+        # Create a simple sensor info dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Sensor Browser")
+        dialog.geometry("600x500")
+
+        ttk.Label(dialog, text="Sensor Library", font=("Segoe UI", 12, "bold")).pack(pady=10)
+
+        # Sensor listbox
+        list_frame = ttk.Frame(dialog)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        sensor_list = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, font=("Consolas", 10))
+        sensor_list.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=sensor_list.yview)
+
+        for sensor_id in self.sensors:
+            sensor_list.insert(tk.END, sensor_id)
+
+        # Info display
+        info_text = tk.Text(dialog, height=12, state=tk.DISABLED, font=("Consolas", 9))
+        info_text.pack(fill=tk.X, padx=10, pady=5)
+
+        def on_select(event):
+            selection = sensor_list.curselection()
+            if not selection:
+                return
+            sensor_id = sensor_list.get(selection[0])
+            try:
+                from eosim.library import get_sensor
+                spec = get_sensor(sensor_id)
+                info = f"""Name: {spec.name}
+Manufacturer: {spec.manufacturer}
+Type: {spec.sensor_type.value}
+Mount: {spec.mount_type.value}
+
+IR Detector:
+  Resolution: {spec.detector_ir.width_pixels}x{spec.detector_ir.height_pixels}
+  Band: {spec.detector_ir.spectral_band_um[0]}-{spec.detector_ir.spectral_band_um[1]} um
+  Pixel Pitch: {spec.detector_ir.pixel_pitch_um} um
+  NETD: {spec.detector_ir.nedt_mk} mK
+
+Optics:
+  Focal Length: {spec.optics_ir.focal_length_mm} mm
+  Aperture: {spec.optics_ir.aperture_mm} mm
+  FOV: {spec.optics_ir.fov_narrow_deg}-{spec.optics_ir.fov_wide_deg} deg"""
+                info_text.config(state=tk.NORMAL)
+                info_text.delete(1.0, tk.END)
+                info_text.insert(tk.END, info)
+                info_text.config(state=tk.DISABLED)
+            except Exception as e:
+                info_text.config(state=tk.NORMAL)
+                info_text.delete(1.0, tk.END)
+                info_text.insert(tk.END, f"Error: {e}")
+                info_text.config(state=tk.DISABLED)
+
+        sensor_list.bind("<<ListboxSelect>>", on_select)
+
+        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
+
     def _show_about(self):
         """Show about dialog."""
         messagebox.showinfo(
@@ -843,8 +944,9 @@ Detection Metrics:
             "- Target object configuration\n"
             "- 6DOF platform motion\n"
             "- Environment settings\n"
-            "- Real-time preview\n\n"
-            "Version 1.0"
+            "- Real-time preview\n"
+            "- 3D Object Viewer\n\n"
+            "Version 1.1"
         )
 
     def _on_close(self):
