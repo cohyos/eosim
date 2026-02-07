@@ -20,6 +20,7 @@ from eosim.studio.scene import Scene, SceneObject, Position3D, Orientation3D
 from eosim.studio.camera import Camera, LensType, SpectrumMode, SensitivityLevel, CAMERA_PRESETS
 from eosim.studio.timeline import Timeline, PlaybackState
 from eosim.studio.renderer import Renderer, RenderedFrame
+from eosim.studio.terrain import TerrainProvider, DetailLevel
 
 
 class TimelineWidget(ttk.Frame):
@@ -633,6 +634,217 @@ class ObjectListWidget(ttk.Frame):
         ttk.Button(dialog, text="Add", command=add).pack(pady=10)
 
 
+class TerrainSettingsWidget(ttk.Frame):
+    """Terrain configuration panel."""
+
+    def __init__(self, parent, scene: Scene, on_change=None):
+        super().__init__(parent)
+        self.scene = scene
+        self.on_change = on_change
+        self.terrain_provider = TerrainProvider()
+
+        self._build_ui()
+
+    def _build_ui(self):
+        # Header
+        ttk.Label(self, text="Terrain Settings",
+                 font=("Segoe UI", 10, "bold")).pack(anchor=tk.W, pady=5)
+
+        # Enable terrain checkbox
+        self.enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self, text="Enable Terrain",
+                       variable=self.enabled_var,
+                       command=self._on_enabled_changed).pack(anchor=tk.W)
+
+        # Terrain settings frame (initially hidden)
+        self.settings_frame = ttk.LabelFrame(self, text="Location", padding=5)
+
+        # Location preset dropdown
+        ttk.Label(self.settings_frame, text="Preset:").pack(anchor=tk.W)
+        presets = list(self.terrain_provider.LOCATION_PRESETS.keys())
+        self.preset_var = tk.StringVar(value="mojave_desert")
+        preset_combo = ttk.Combobox(self.settings_frame, textvariable=self.preset_var,
+                                    values=presets, state="readonly", width=18)
+        preset_combo.pack(fill=tk.X, pady=2)
+        preset_combo.bind("<<ComboboxSelected>>", self._on_preset_changed)
+
+        # Location info label
+        self.location_info_var = tk.StringVar(value="")
+        ttk.Label(self.settings_frame, textvariable=self.location_info_var,
+                 font=("Consolas", 8)).pack(anchor=tk.W)
+
+        # Custom lat/lon entry
+        custom_frame = ttk.Frame(self.settings_frame)
+        custom_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(custom_frame, text="Custom:").pack(side=tk.LEFT)
+        self.custom_var = tk.StringVar(value="")
+        custom_entry = ttk.Entry(custom_frame, textvariable=self.custom_var, width=14)
+        custom_entry.pack(side=tk.LEFT, padx=2)
+        ttk.Button(custom_frame, text="Set", width=4,
+                  command=self._on_custom_set).pack(side=tk.LEFT)
+
+        ttk.Label(self.settings_frame, text="Format: lat,lon (e.g., 35.0,-116.0)",
+                 font=("Segoe UI", 7)).pack(anchor=tk.W)
+
+        # Radius slider
+        radius_frame = ttk.LabelFrame(self.settings_frame, text="Area", padding=5)
+        radius_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(radius_frame, text="Radius (km):").pack(anchor=tk.W)
+        self.radius_var = tk.DoubleVar(value=5.0)
+        radius_scale = ttk.Scale(radius_frame, from_=1, to=50,
+                                 variable=self.radius_var, orient=tk.HORIZONTAL,
+                                 command=self._on_radius_changed)
+        radius_scale.pack(fill=tk.X)
+        self.radius_label = ttk.Label(radius_frame, text="5.0 km")
+        self.radius_label.pack(anchor=tk.E)
+
+        # Detail level
+        ttk.Label(radius_frame, text="Detail Level:").pack(anchor=tk.W, pady=(5, 0))
+        self.detail_var = tk.StringVar(value="low")
+        detail_frame = ttk.Frame(radius_frame)
+        detail_frame.pack(fill=tk.X)
+
+        for detail in ["low", "medium", "high"]:
+            resolution = {"low": "100m", "medium": "30m", "high": "10m"}[detail]
+            ttk.Radiobutton(detail_frame, text=f"{detail.title()} ({resolution})",
+                           value=detail, variable=self.detail_var,
+                           command=self._on_detail_changed).pack(anchor=tk.W)
+
+        # Time of day
+        time_frame = ttk.LabelFrame(self.settings_frame, text="Time of Day", padding=5)
+        time_frame.pack(fill=tk.X, pady=5)
+
+        self.time_var = tk.DoubleVar(value=12.0)
+        time_scale = ttk.Scale(time_frame, from_=0, to=24,
+                               variable=self.time_var, orient=tk.HORIZONTAL,
+                               command=self._on_time_changed)
+        time_scale.pack(fill=tk.X)
+        self.time_label = ttk.Label(time_frame, text="12:00 (Noon)")
+        self.time_label.pack(anchor=tk.E)
+
+        # Apply button
+        ttk.Button(self.settings_frame, text="Apply Terrain",
+                  command=self._apply_terrain).pack(fill=tk.X, pady=5)
+
+        # Status label
+        self.status_var = tk.StringVar(value="No terrain loaded")
+        ttk.Label(self, textvariable=self.status_var,
+                 font=("Consolas", 8)).pack(anchor=tk.W, pady=2)
+
+        # Update location info
+        self._update_location_info()
+
+    def _on_enabled_changed(self):
+        if self.enabled_var.get():
+            self.settings_frame.pack(fill=tk.X, pady=5)
+        else:
+            self.settings_frame.pack_forget()
+            # Clear terrain from scene
+            if hasattr(self.scene, '_terrain_data'):
+                self.scene._terrain_data = None
+                self.status_var.set("Terrain disabled")
+                self._notify_change()
+
+    def _on_preset_changed(self, event=None):
+        self._update_location_info()
+
+    def _on_custom_set(self):
+        custom = self.custom_var.get().strip()
+        if "," in custom:
+            try:
+                parts = custom.split(",")
+                lat = float(parts[0].strip())
+                lon = float(parts[1].strip())
+                self.preset_var.set(f"custom")
+                self.location_info_var.set(f"Custom: {lat:.2f}, {lon:.2f}")
+            except ValueError:
+                self.location_info_var.set("Invalid format")
+
+    def _on_radius_changed(self, value=None):
+        radius = self.radius_var.get()
+        self.radius_label.config(text=f"{radius:.1f} km")
+
+    def _on_detail_changed(self):
+        pass  # Will apply on "Apply Terrain" click
+
+    def _on_time_changed(self, value=None):
+        hour = self.time_var.get()
+        hour_int = int(hour)
+        minutes = int((hour - hour_int) * 60)
+        period = self._get_time_period(hour)
+        self.time_label.config(text=f"{hour_int:02d}:{minutes:02d} ({period})")
+
+    def _get_time_period(self, hour: float) -> str:
+        if hour < 5:
+            return "Night"
+        elif hour < 7:
+            return "Dawn"
+        elif hour < 10:
+            return "Morning"
+        elif hour < 14:
+            return "Midday"
+        elif hour < 17:
+            return "Afternoon"
+        elif hour < 19:
+            return "Evening"
+        elif hour < 21:
+            return "Dusk"
+        else:
+            return "Night"
+
+    def _update_location_info(self):
+        preset = self.preset_var.get()
+        if preset in self.terrain_provider.LOCATION_PRESETS:
+            loc = self.terrain_provider.LOCATION_PRESETS[preset]
+            self.location_info_var.set(f"{loc.name}\n{loc.latitude:.2f}, {loc.longitude:.2f}")
+
+    def _apply_terrain(self):
+        """Apply terrain settings to the scene."""
+        preset = self.preset_var.get()
+        radius_m = self.radius_var.get() * 1000  # Convert km to m
+        detail = self.detail_var.get()
+        time_of_day = self.time_var.get()
+
+        # Get location
+        custom = self.custom_var.get().strip()
+        if "," in custom:
+            location = custom
+        else:
+            location = preset
+
+        try:
+            self.status_var.set("Loading terrain...")
+            self.update()
+
+            # Set terrain on scene
+            self.scene.set_terrain(
+                location=location,
+                radius_m=radius_m,
+                detail=detail,
+                time_of_day=time_of_day
+            )
+
+            # Get terrain info for status
+            terrain = self.scene.get_terrain()
+            if terrain:
+                rows, cols = terrain.elevation.shape
+                elev_range = f"{terrain.min_elevation:.0f}m - {terrain.max_elevation:.0f}m"
+                self.status_var.set(f"Grid: {rows}x{cols}, Elev: {elev_range}")
+            else:
+                self.status_var.set("Terrain loaded")
+
+            self._notify_change()
+
+        except Exception as e:
+            self.status_var.set(f"Error: {str(e)[:30]}")
+
+    def _notify_change(self):
+        if self.on_change:
+            self.on_change()
+
+
 class Studio:
     """Main EOSIM Studio application."""
 
@@ -699,6 +911,11 @@ class Studio:
                                                    on_change=self._on_camera_changed)
         self.camera_settings.pack(fill=tk.X, pady=5)
 
+        # Terrain settings
+        self.terrain_settings = TerrainSettingsWidget(right_frame, self.project.scene,
+                                                      on_change=self._on_terrain_changed)
+        self.terrain_settings.pack(fill=tk.X, pady=5)
+
         # Render button
         ttk.Button(right_frame, text="Export Video...",
                   command=self._export_video).pack(fill=tk.X, pady=10)
@@ -758,6 +975,10 @@ class Studio:
         """Handle camera settings change."""
         self._on_time_changed(self.project.timeline.current_time)
 
+    def _on_terrain_changed(self):
+        """Handle terrain settings change."""
+        self._on_time_changed(self.project.timeline.current_time)
+
     def _on_object_selected(self, obj_id: str):
         """Handle object selection."""
         # Could show object properties panel
@@ -771,6 +992,7 @@ class Studio:
         self.scene_view.camera = self.project.camera
         self.object_list.scene = self.project.scene
         self.object_list.refresh()
+        self.terrain_settings.scene = self.project.scene
         self.root.title(f"EOSIM Studio - {self.project.name}")
         self._on_time_changed(0.0)
 
@@ -787,6 +1009,7 @@ class Studio:
                 self.scene_view.camera = self.project.camera
                 self.object_list.scene = self.project.scene
                 self.object_list.refresh()
+                self.terrain_settings.scene = self.project.scene
                 self.root.title(f"EOSIM Studio - {self.project.name}")
                 self._on_time_changed(0.0)
             except Exception as e:
@@ -816,6 +1039,7 @@ class Studio:
         self.timeline_widget.update_duration(self.project.duration)
         self.object_list.scene = self.project.scene
         self.object_list.refresh()
+        self.terrain_settings.scene = self.project.scene
         self.root.title(f"EOSIM Studio - {self.project.name}")
         self._on_time_changed(0.0)
 

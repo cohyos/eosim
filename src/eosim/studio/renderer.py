@@ -192,9 +192,19 @@ class Renderer:
             temp_map = None  # No temperature data in visible mode
         else:
             # Thermal rendering
-            # Create temperature map
-            temp_map = np.full((height, width), self.background_temp_k, dtype=np.float32)
+            # Check if terrain thermal data is available
+            terrain = self.scene.get_terrain() if hasattr(self.scene, 'get_terrain') else None
 
+            if terrain is not None and terrain.thermal_map is not None:
+                # Create temperature map from terrain
+                temp_map = self._render_terrain_thermal(
+                    width, height, terrain, cam_pos, cam_ori, self.camera.get_fov()
+                )
+            else:
+                # Default uniform background
+                temp_map = np.full((height, width), self.background_temp_k, dtype=np.float32)
+
+            # Render objects on top
             for obj_state in object_states:
                 self._render_object_to_map(
                     temp_map, obj_state, cam_pos, cam_ori, self.camera.get_fov()
@@ -692,20 +702,162 @@ class Renderer:
         # Create image with sky background
         image = np.zeros((height, width, 3), dtype=np.uint8)
 
-        # Sky gradient (lighter at horizon)
-        for y in range(height):
-            # Blend from deep blue (top) to lighter blue (bottom)
-            blend = y / height
-            sky_r = int(self.sky_color[0] * (0.6 + 0.4 * blend))
-            sky_g = int(self.sky_color[1] * (0.7 + 0.3 * blend))
-            sky_b = int(self.sky_color[2] * (0.8 + 0.2 * blend))
-            image[y, :] = (sky_r, sky_g, sky_b)
+        # Check if terrain is available
+        terrain = self.scene.get_terrain() if hasattr(self.scene, 'get_terrain') else None
+
+        if terrain is not None and terrain.visible_map is not None:
+            # Render terrain as background
+            self._render_terrain_visible(image, terrain, cam_pos, cam_ori, fov_deg)
+        else:
+            # Default sky gradient (lighter at horizon)
+            for y in range(height):
+                blend = y / height
+                sky_r = int(self.sky_color[0] * (0.6 + 0.4 * blend))
+                sky_g = int(self.sky_color[1] * (0.7 + 0.3 * blend))
+                sky_b = int(self.sky_color[2] * (0.8 + 0.2 * blend))
+                image[y, :] = (sky_r, sky_g, sky_b)
 
         # Render each object
         for obj_state in object_states:
             self._render_visible_object(image, obj_state, cam_pos, cam_ori, fov_deg)
 
         return image
+
+    def _render_terrain_visible(self, image: NDArray, terrain, cam_pos: Position3D,
+                                cam_ori: Orientation3D, fov_deg: float):
+        """Render terrain in visible mode.
+
+        Args:
+            image: RGB image to render onto
+            terrain: TerrainData object
+            cam_pos: Camera position
+            cam_ori: Camera orientation
+            fov_deg: Field of view
+        """
+        height, width = image.shape[:2]
+        half_fov = fov_deg / 2
+
+        # Get terrain data
+        terrain_visible = terrain.visible_map
+        terrain_elev = terrain.elevation
+        t_rows, t_cols = terrain_elev.shape
+        radius = terrain.config.radius_m
+        resolution = terrain.config.grid_resolution
+
+        # Sky in upper portion
+        horizon_line = int(height * 0.4)  # Approximate horizon
+        for y in range(horizon_line):
+            blend = y / horizon_line
+            sky_r = int(self.sky_color[0] * (0.6 + 0.4 * blend))
+            sky_g = int(self.sky_color[1] * (0.7 + 0.3 * blend))
+            sky_b = int(self.sky_color[2] * (0.8 + 0.2 * blend))
+            image[y, :] = (sky_r, sky_g, sky_b)
+
+        # Render terrain below horizon
+        # Simple projection: map screen pixels to terrain grid
+        for y in range(horizon_line, height):
+            # Distance increases as we go up from bottom
+            screen_y = (y - horizon_line) / (height - horizon_line)  # 0 at horizon, 1 at bottom
+            # Map to terrain distance (closer = bottom of screen)
+            view_dist = radius * (1.0 - screen_y * 0.8)  # Perspective approximation
+
+            for x in range(width):
+                # Horizontal angle from center
+                screen_x = (x - width / 2) / (width / 2)  # -1 to 1
+                angle = screen_x * half_fov
+
+                # Calculate terrain position based on camera orientation
+                dx = view_dist * np.sin(np.radians(cam_ori.heading + angle))
+                dy = view_dist * np.cos(np.radians(cam_ori.heading + angle))
+
+                # World position
+                world_x = cam_pos.x + dx
+                world_y = cam_pos.y + dy
+
+                # Convert to terrain grid coordinates
+                t_col = int((world_x + radius) / resolution)
+                t_row = int((radius - world_y) / resolution)
+
+                # Clamp to terrain bounds
+                t_col = max(0, min(t_cols - 1, t_col))
+                t_row = max(0, min(t_rows - 1, t_row))
+
+                # Get terrain color
+                color = terrain_visible[t_row, t_col]
+
+                # Apply distance fog (blend toward sky color)
+                fog_factor = min(1.0, view_dist / (radius * 0.8))
+                fog_factor = fog_factor ** 2  # Quadratic falloff
+
+                final_color = tuple(
+                    int(color[i] * (1 - fog_factor * 0.5) + self.sky_color[i] * fog_factor * 0.5)
+                    for i in range(3)
+                )
+                image[y, x] = final_color
+
+    def _render_terrain_thermal(self, width: int, height: int, terrain,
+                                cam_pos: Position3D, cam_ori: Orientation3D,
+                                fov_deg: float) -> NDArray:
+        """Render terrain in thermal mode.
+
+        Args:
+            width: Image width
+            height: Image height
+            terrain: TerrainData object
+            cam_pos: Camera position
+            cam_ori: Camera orientation
+            fov_deg: Field of view
+
+        Returns:
+            Temperature map as 2D float array
+        """
+        half_fov = fov_deg / 2
+
+        # Get terrain data
+        terrain_thermal = terrain.thermal_map
+        terrain_elev = terrain.elevation
+        t_rows, t_cols = terrain_thermal.shape
+        radius = terrain.config.radius_m
+        resolution = terrain.config.grid_resolution
+
+        # Initialize with sky temperature (cold)
+        sky_temp = 250.0  # Cold sky in thermal
+        temp_map = np.full((height, width), sky_temp, dtype=np.float32)
+
+        # Approximate horizon line
+        horizon_line = int(height * 0.4)
+
+        # Render terrain below horizon
+        for y in range(horizon_line, height):
+            screen_y = (y - horizon_line) / (height - horizon_line)
+            view_dist = radius * (1.0 - screen_y * 0.8)
+
+            for x in range(width):
+                screen_x = (x - width / 2) / (width / 2)
+                angle = screen_x * half_fov
+
+                dx = view_dist * np.sin(np.radians(cam_ori.heading + angle))
+                dy = view_dist * np.cos(np.radians(cam_ori.heading + angle))
+
+                world_x = cam_pos.x + dx
+                world_y = cam_pos.y + dy
+
+                t_col = int((world_x + radius) / resolution)
+                t_row = int((radius - world_y) / resolution)
+
+                t_col = max(0, min(t_cols - 1, t_col))
+                t_row = max(0, min(t_rows - 1, t_row))
+
+                # Get terrain temperature
+                ground_temp = terrain_thermal[t_row, t_col]
+
+                # Apply atmospheric attenuation
+                attenuation = np.exp(-self.atmosphere_attenuation * view_dist)
+                apparent_temp = sky_temp + (ground_temp - sky_temp) * attenuation
+
+                temp_map[y, x] = apparent_temp
+
+        return temp_map
 
     def _render_visible_object(self, image: NDArray,
                                obj_state: Dict[str, Any],

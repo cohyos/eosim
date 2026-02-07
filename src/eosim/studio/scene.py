@@ -246,11 +246,13 @@ class Scene:
 
     The scene is the 3D world where objects exist and move. It provides:
     - Object management (add, remove, find)
+    - Terrain configuration (geographic location, elevation, land cover)
     - Time-based state queries
     - Scene bounds and statistics
 
     Example:
         >>> scene = Scene("Combat Zone")
+        >>> scene.set_terrain("mojave_desert", radius_m=5000, detail="low")
         >>> scene.add_object("tank1", "m1_abrams", Position3D(1000, 500, 0))
         >>> scene.add_object("jet1", "f16", Position3D(0, 0, 5000))
         >>> scene.get_objects_at(5.0)  # Get all object states at t=5s
@@ -258,11 +260,88 @@ class Scene:
 
     def __init__(self, name: str = "Untitled Scene"):
         self.name = name
+        self.description: str = ""
         self.objects: Dict[str, SceneObject] = {}
         self.duration_sec: float = 30.0  # Default scene duration
         self.ground_level: float = 0.0
         self.ambient_temperature_k: float = 290.0
         self._next_id = 1
+
+        # Terrain configuration
+        self._terrain_data = None
+        self._terrain_provider = None
+
+    def set_terrain(self, location: str = "mojave_desert",
+                    radius_m: float = 5000.0,
+                    detail: str = "low",
+                    time_of_day: float = 12.0):
+        """Configure terrain for the scene.
+
+        Args:
+            location: Preset name or "lat,lon" string. Available presets:
+                - mojave_desert, persian_gulf, central_europe, korean_peninsula
+                - sahara, arctic, pacific_islands, amazon, himalaya, great_plains
+            radius_m: Terrain radius in meters
+            detail: Detail level - "low" (100m), "medium" (30m), "high" (10m)
+            time_of_day: Hour of day (0-24) affects thermal properties
+
+        Example:
+            >>> scene.set_terrain("persian_gulf", radius_m=10000, detail="medium")
+            >>> scene.set_terrain("35.0,-116.0", radius_m=5000)  # Custom lat/lon
+        """
+        # Lazy import to avoid circular dependencies
+        from eosim.studio.terrain import TerrainProvider, TerrainConfig, GeoLocation, DetailLevel
+
+        if self._terrain_provider is None:
+            self._terrain_provider = TerrainProvider()
+
+        # Parse location
+        if location in self._terrain_provider.LOCATION_PRESETS:
+            geo = self._terrain_provider.LOCATION_PRESETS[location]
+        elif "," in location:
+            parts = location.split(",")
+            lat, lon = float(parts[0].strip()), float(parts[1].strip())
+            geo = GeoLocation(lat, lon, f"Custom ({lat:.2f}, {lon:.2f})")
+        else:
+            raise ValueError(f"Unknown location: {location}")
+
+        # Parse detail
+        detail_map = {"low": DetailLevel.LOW, "medium": DetailLevel.MEDIUM, "high": DetailLevel.HIGH}
+        detail_level = detail_map.get(detail.lower(), DetailLevel.LOW)
+
+        # Create config and load terrain
+        config = TerrainConfig(
+            center=geo,
+            radius_m=radius_m,
+            detail_level=detail_level,
+            time_of_day=time_of_day
+        )
+
+        self._terrain_data = self._terrain_provider.load_terrain(config)
+
+        # Update scene properties based on terrain
+        self.ambient_temperature_k = 290.0  # Will be overridden by terrain thermal map
+        self.ground_level = self._terrain_data.min_elevation
+
+    def get_terrain(self):
+        """Get the terrain data, or None if not configured."""
+        return self._terrain_data
+
+    def get_terrain_presets(self) -> List[str]:
+        """Get list of available terrain preset names."""
+        from eosim.studio.terrain import TerrainProvider
+        if self._terrain_provider is None:
+            self._terrain_provider = TerrainProvider()
+        return list(self._terrain_provider.LOCATION_PRESETS.keys())
+
+    def get_elevation_at(self, x: float, y: float) -> float:
+        """Get terrain elevation at local coordinates.
+
+        Returns ground_level if no terrain is configured.
+        """
+        if self._terrain_data is not None:
+            return self._terrain_data.get_elevation_at(x, y)
+        return self.ground_level
 
     def add_object(self, object_type: str,
                    position: Optional[Position3D] = None,
