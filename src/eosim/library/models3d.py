@@ -530,12 +530,28 @@ class ModelLibrary:
                     mesh = self._load_with_trimesh(local_path)
                 else:
                     mesh = self._load_obj(local_path)
-                
+
                 if mesh:
                     mesh.name = info.get("name", model_id)
                     mesh.metadata = info
                     self._loaded_models[model_id] = mesh
                     return mesh
+
+        # Try embedded detailed model first
+        try:
+            from eosim.library.embedded_models import get_embedded_model
+            model_data = get_embedded_model(model_id)
+            mesh = Mesh3D(
+                vertices=model_data["vertices"],
+                faces=model_data["faces"],
+                thermal_zones=model_data.get("thermal_zones", {}),
+                name=model_data.get("name", model_id),
+                metadata=info
+            )
+            self._loaded_models[model_id] = mesh
+            return mesh
+        except (ImportError, KeyError):
+            pass  # Fall back to procedural
 
         # Generate procedural model
         if info.get("source") == "procedural":
