@@ -3,9 +3,10 @@ Frame renderer for EOSIM Studio.
 
 The Renderer generates camera frames by:
 1. Getting scene state at current time
-2. Projecting objects into camera view
-3. Rendering thermal/visible imagery
-4. Applying colormaps and overlays
+2. Loading 3D models from the library
+3. Projecting objects into camera view using proper 3D transforms
+4. Rendering thermal/visible imagery with thermal zones
+5. Applying colormaps and overlays
 """
 
 import numpy as np
@@ -15,6 +16,26 @@ from dataclasses import dataclass
 
 from eosim.studio.scene import Scene, Position3D, Orientation3D
 from eosim.studio.camera import Camera, SpectrumMode
+
+
+def _load_model_library():
+    """Lazy load the model library to avoid circular imports."""
+    try:
+        from eosim.library.models3d import ModelLibrary
+        return ModelLibrary()
+    except ImportError:
+        return None
+
+
+def _load_embedded_model(model_id: str) -> Optional[Dict[str, Any]]:
+    """Try to load an embedded 3D model."""
+    try:
+        from eosim.library.embedded_models import get_embedded_model, list_embedded_models
+        if model_id in list_embedded_models():
+            return get_embedded_model(model_id)
+    except ImportError:
+        pass
+    return None
 
 
 @dataclass
@@ -82,8 +103,14 @@ class Renderer:
         self.background_temp_k = 290.0  # Ambient temperature
         self.atmosphere_attenuation = 0.0001  # Per meter
 
-        # Cache for object renderers
-        self._object_cache: Dict[str, Any] = {}
+        # Cache for 3D models
+        self._model_cache: Dict[str, Any] = {}
+
+        # Try to load model library
+        self._model_library = _load_model_library()
+
+        # Use 3D models when available
+        self.use_3d_models = True
 
     def render_frame(self, time_sec: float, frame_number: int = 0) -> RenderedFrame:
         """Render a frame at the given time.
@@ -135,11 +162,23 @@ class Renderer:
                               cam_pos: Position3D,
                               cam_ori: Orientation3D,
                               fov_deg: float):
-        """Render a single object onto the temperature map."""
+        """Render a single object onto the temperature map.
+
+        Uses 3D models from the library when available, falls back to
+        simplified rectangle rendering otherwise.
+        """
         obj_pos: Position3D = obj_state["position"]
         obj_ori: Orientation3D = obj_state["orientation"]
         obj_type: str = obj_state["type"]
 
+        # Try to use 3D model if enabled
+        if self.use_3d_models:
+            model = self._get_3d_model(obj_type)
+            if model is not None:
+                self._render_3d_model(temp_map, model, obj_state, cam_pos, cam_ori, fov_deg)
+                return
+
+        # Fallback to simple rectangle rendering
         # Calculate relative position
         dx = obj_pos.x - cam_pos.x
         dy = obj_pos.y - cam_pos.y
@@ -254,6 +293,324 @@ class Renderer:
             "aim120": 3.5, "s400_launcher": 12,
         }
         return sizes.get(obj_type, 5.0)
+
+    def _get_3d_model(self, obj_type: str) -> Optional[Dict[str, Any]]:
+        """Get 3D model for object type from cache or library.
+
+        Args:
+            obj_type: Object type identifier
+
+        Returns:
+            Model dict with vertices, faces, thermal_zones or None
+        """
+        # Check cache first
+        if obj_type in self._model_cache:
+            return self._model_cache[obj_type]
+
+        model = None
+
+        # Try embedded models first (they have best detail)
+        model = _load_embedded_model(obj_type)
+
+        # Try model library if no embedded model
+        if model is None and self._model_library is not None:
+            try:
+                mesh = self._model_library.get_model(obj_type)
+                if mesh is not None:
+                    model = {
+                        "vertices": mesh.vertices,
+                        "faces": mesh.faces,
+                        "thermal_zones": mesh.thermal_zones or {},
+                        "name": mesh.name,
+                    }
+            except Exception:
+                pass
+
+        # Cache result (even if None)
+        self._model_cache[obj_type] = model
+        return model
+
+    def _transform_vertices(self, vertices: List[Tuple[float, float, float]],
+                           obj_pos: Position3D, obj_ori: Orientation3D,
+                           scale: float = 1.0) -> List[Tuple[float, float, float]]:
+        """Transform model vertices to world coordinates.
+
+        Args:
+            vertices: Model vertices in local coordinates
+            obj_pos: Object world position
+            obj_ori: Object world orientation
+            scale: Scale factor
+
+        Returns:
+            Transformed vertices in world coordinates
+        """
+        # Convert orientation to radians
+        heading_rad = np.radians(obj_ori.heading)
+        pitch_rad = np.radians(obj_ori.pitch)
+        roll_rad = np.radians(obj_ori.roll)
+
+        # Rotation matrices
+        cos_h, sin_h = np.cos(heading_rad), np.sin(heading_rad)
+        cos_p, sin_p = np.cos(pitch_rad), np.sin(pitch_rad)
+        cos_r, sin_r = np.cos(roll_rad), np.sin(roll_rad)
+
+        # Combined rotation (ZYX order: heading, pitch, roll)
+        R = np.array([
+            [cos_h * cos_p, cos_h * sin_p * sin_r - sin_h * cos_r, cos_h * sin_p * cos_r + sin_h * sin_r],
+            [sin_h * cos_p, sin_h * sin_p * sin_r + cos_h * cos_r, sin_h * sin_p * cos_r - cos_h * sin_r],
+            [-sin_p, cos_p * sin_r, cos_p * cos_r]
+        ])
+
+        transformed = []
+        for v in vertices:
+            # Scale and rotate
+            local = np.array([v[0] * scale, v[1] * scale, v[2] * scale])
+            rotated = R @ local
+
+            # Translate
+            world = (
+                rotated[0] + obj_pos.x,
+                rotated[1] + obj_pos.y,
+                rotated[2] + obj_pos.z
+            )
+            transformed.append(world)
+
+        return transformed
+
+    def _project_to_camera(self, world_vertices: List[Tuple[float, float, float]],
+                          cam_pos: Position3D, cam_ori: Orientation3D,
+                          fov_deg: float, width: int, height: int
+                          ) -> List[Optional[Tuple[int, int, float]]]:
+        """Project world vertices to screen coordinates.
+
+        Args:
+            world_vertices: Vertices in world coordinates
+            cam_pos: Camera position
+            cam_ori: Camera orientation
+            fov_deg: Camera field of view
+            width: Screen width
+            height: Screen height
+
+        Returns:
+            List of (px, py, depth) or None if behind camera
+        """
+        # Camera rotation matrix (inverse of camera orientation)
+        heading_rad = np.radians(-cam_ori.heading)
+        pitch_rad = np.radians(-cam_ori.pitch)
+        roll_rad = np.radians(-cam_ori.roll)
+
+        cos_h, sin_h = np.cos(heading_rad), np.sin(heading_rad)
+        cos_p, sin_p = np.cos(pitch_rad), np.sin(pitch_rad)
+        cos_r, sin_r = np.cos(roll_rad), np.sin(roll_rad)
+
+        # Combined inverse rotation
+        R_inv = np.array([
+            [cos_h * cos_p, sin_h * cos_p, -sin_p],
+            [cos_h * sin_p * sin_r - sin_h * cos_r, sin_h * sin_p * sin_r + cos_h * cos_r, cos_p * sin_r],
+            [cos_h * sin_p * cos_r + sin_h * sin_r, sin_h * sin_p * cos_r - cos_h * sin_r, cos_p * cos_r]
+        ])
+
+        half_fov = np.radians(fov_deg / 2)
+        focal_length = 1.0 / np.tan(half_fov)
+
+        projected = []
+        for v in world_vertices:
+            # Translate to camera space
+            dx = v[0] - cam_pos.x
+            dy = v[1] - cam_pos.y
+            dz = v[2] - cam_pos.z
+
+            # Rotate to camera space
+            cam_space = R_inv @ np.array([dx, dy, dz])
+
+            # In our coordinate system, Y is forward
+            depth = cam_space[1]
+
+            if depth <= 0.1:  # Behind camera
+                projected.append(None)
+                continue
+
+            # Perspective projection
+            x_proj = cam_space[0] / depth * focal_length
+            z_proj = -cam_space[2] / depth * focal_length
+
+            # Convert to screen coordinates
+            px = int(width / 2 + x_proj * width / 2)
+            py = int(height / 2 + z_proj * height / 2)
+
+            projected.append((px, py, depth))
+
+        return projected
+
+    def _render_3d_model(self, temp_map: NDArray,
+                        model: Dict[str, Any],
+                        obj_state: Dict[str, Any],
+                        cam_pos: Position3D,
+                        cam_ori: Orientation3D,
+                        fov_deg: float):
+        """Render a 3D model onto the temperature map.
+
+        Args:
+            temp_map: Temperature map to render onto
+            model: 3D model dict with vertices, faces, thermal_zones
+            obj_state: Object state dict
+            cam_pos: Camera position
+            cam_ori: Camera orientation
+            fov_deg: Field of view
+        """
+        obj_pos: Position3D = obj_state["position"]
+        obj_ori: Orientation3D = obj_state["orientation"]
+        obj_type: str = obj_state["type"]
+
+        # Get model scale (models are normalized, scale to actual size)
+        actual_size = self._get_object_size(obj_type)
+        model_vertices_raw = model.get("vertices", [])
+        if len(model_vertices_raw) == 0:
+            return
+
+        # Convert to numpy array for calculations, list for iteration
+        verts_array = np.array(model_vertices_raw)
+        model_vertices = verts_array.tolist()
+        model_size = np.max(verts_array.max(axis=0) - verts_array.min(axis=0))
+        scale = actual_size / max(model_size, 0.1)
+
+        # Transform vertices to world coordinates
+        world_verts = self._transform_vertices(model_vertices, obj_pos, obj_ori, scale)
+
+        # Calculate distance for atmospheric attenuation
+        dx = obj_pos.x - cam_pos.x
+        dy = obj_pos.y - cam_pos.y
+        dz = obj_pos.z - cam_pos.z
+        distance = np.sqrt(dx**2 + dy**2 + dz**2)
+
+        if distance < 1:
+            return
+
+        attenuation = np.exp(-self.atmosphere_attenuation * distance)
+
+        # Project to screen
+        height, width = temp_map.shape
+        projected = self._project_to_camera(world_verts, cam_pos, cam_ori, fov_deg, width, height)
+
+        # Get base temperature
+        base_temp = self._get_object_temperature(obj_type)
+        thermal_zones = model.get("thermal_zones", {})
+
+        # Temperature offsets by zone name (relative to base temp)
+        zone_temp_offsets = {
+            # Hot zones
+            "exhaust": 150,      # Jet exhaust
+            "engine": 80,        # Engine compartment
+            "rotor_hub": 40,     # Helicopter rotor hub
+            "weapons": 20,       # Missile/weapon bays
+            # Warm zones
+            "cockpit": 30,       # Cockpit/cabin area
+            "cabin": 25,         # Vehicle cabin
+            "wheels": 40,        # Hot wheels from friction
+            "tires": 40,
+            # Neutral zones
+            "fuselage": 0,       # Aircraft body
+            "body": 0,           # Vehicle body
+            "wings": -5,         # Wings (cooler due to airflow)
+            "tail": 0,           # Tail section
+            "turret": 10,        # Tank turret
+            "tracks": 30,        # Tank tracks (friction)
+            "gun": 5,            # Gun barrel
+            # Human zones
+            "head": 3,           # Head
+            "torso": 0,          # Torso
+            "arms": -2,          # Arms
+            "legs": -3,          # Legs
+            # Ship zones
+            "hull": 0,           # Ship hull
+            "superstructure": 15,  # Superstructure
+            "funnel": 100,       # Exhaust funnel
+        }
+
+        # Render each face
+        faces = model.get("faces", [])
+        for face_idx, face in enumerate(faces):
+            # Get projected vertices for this face
+            face_points = []
+            behind_camera = False
+
+            for vi in face:
+                if vi >= len(projected) or projected[vi] is None:
+                    behind_camera = True
+                    break
+                face_points.append(projected[vi])
+
+            if behind_camera or len(face_points) < 3:
+                continue
+
+            # Determine temperature for this face based on thermal zones
+            face_temp = base_temp
+
+            # Look up zone name for this face
+            zone_name = thermal_zones.get(face_idx, "body")
+            if isinstance(zone_name, str):
+                # Apply temperature offset based on zone
+                offset = zone_temp_offsets.get(zone_name.lower(), 0)
+                face_temp = base_temp + offset
+
+            # Apply atmospheric attenuation
+            apparent_temp = self.background_temp_k + (face_temp - self.background_temp_k) * attenuation
+
+            # Rasterize the face
+            self._fill_polygon(temp_map, face_points, apparent_temp)
+
+    def _fill_polygon(self, temp_map: NDArray,
+                     points: List[Tuple[int, int, float]],
+                     temperature: float):
+        """Fill a polygon on the temperature map using scanline algorithm.
+
+        Args:
+            temp_map: Temperature map to render onto
+            points: List of (px, py, depth) screen coordinates
+            temperature: Temperature value to fill with
+        """
+        if len(points) < 3:
+            return
+
+        height, width = temp_map.shape
+
+        # Extract 2D points
+        pts = [(p[0], p[1]) for p in points]
+
+        # Get bounding box
+        min_x = max(0, min(p[0] for p in pts))
+        max_x = min(width - 1, max(p[0] for p in pts))
+        min_y = max(0, min(p[1] for p in pts))
+        max_y = min(height - 1, max(p[1] for p in pts))
+
+        if min_x >= max_x or min_y >= max_y:
+            return
+
+        # Simple scanline fill
+        for y in range(min_y, max_y + 1):
+            # Find intersections with polygon edges
+            intersections = []
+            n = len(pts)
+            for i in range(n):
+                p1 = pts[i]
+                p2 = pts[(i + 1) % n]
+
+                if (p1[1] <= y < p2[1]) or (p2[1] <= y < p1[1]):
+                    if p2[1] != p1[1]:
+                        x = p1[0] + (y - p1[1]) * (p2[0] - p1[0]) / (p2[1] - p1[1])
+                        intersections.append(x)
+
+            if len(intersections) < 2:
+                continue
+
+            intersections.sort()
+
+            # Fill between pairs of intersections
+            for i in range(0, len(intersections) - 1, 2):
+                x1 = max(0, int(intersections[i]))
+                x2 = min(width - 1, int(intersections[i + 1]))
+                if x1 <= x2:
+                    temp_map[y, x1:x2 + 1] = temperature
 
     def _apply_colormap(self, temp_map: NDArray, colormap_name: str) -> NDArray:
         """Apply colormap to temperature map.
