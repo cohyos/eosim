@@ -95,6 +95,49 @@ class Renderer:
         ],
     }
 
+    # Visible light colors for different object types (RGB)
+    VISIBLE_COLORS = {
+        # Aircraft - gray/silver with darker areas
+        "f16": {"body": (140, 140, 150), "cockpit": (40, 60, 80), "exhaust": (60, 60, 70), "wings": (130, 130, 140)},
+        "f22": {"body": (130, 130, 140), "cockpit": (30, 50, 70), "exhaust": (50, 50, 60), "wings": (120, 120, 130)},
+        "apache": {"body": (90, 100, 90), "cockpit": (50, 70, 90), "exhaust": (70, 70, 80), "rotor_hub": (60, 60, 60)},
+        # Tanks - tan/olive drab
+        "m1_abrams": {"body": (140, 130, 100), "turret": (130, 120, 90), "tracks": (50, 45, 40), "gun": (80, 75, 70)},
+        "t90": {"body": (100, 110, 90), "turret": (90, 100, 80), "tracks": (45, 40, 35), "gun": (70, 70, 65)},
+        # Vehicles
+        "humvee": {"body": (140, 130, 100), "cabin": (60, 80, 100), "wheels": (40, 40, 40)},
+        # People - skin tones and clothing
+        "soldier_standing": {"head": (200, 160, 130), "torso": (90, 100, 80), "arms": (90, 100, 80), "legs": (90, 100, 80)},
+        "civilian": {"head": (210, 170, 140), "torso": (100, 100, 150), "arms": (210, 170, 140), "legs": (50, 50, 80)},
+        # Ships
+        "destroyer": {"hull": (120, 120, 130), "superstructure": (140, 140, 150), "funnel": (60, 60, 70)},
+    }
+
+    # Default visible colors by zone type
+    VISIBLE_ZONE_COLORS = {
+        "body": (140, 140, 145),
+        "fuselage": (140, 140, 150),
+        "wings": (130, 130, 140),
+        "tail": (135, 135, 145),
+        "cockpit": (40, 60, 80),
+        "exhaust": (60, 60, 70),
+        "engine": (80, 80, 85),
+        "turret": (130, 120, 90),
+        "tracks": (50, 45, 40),
+        "gun": (80, 75, 70),
+        "wheels": (40, 40, 40),
+        "tires": (35, 35, 35),
+        "cabin": (60, 80, 100),
+        "head": (200, 160, 130),
+        "torso": (90, 100, 80),
+        "arms": (180, 150, 120),
+        "legs": (70, 80, 70),
+        "hull": (120, 120, 130),
+        "superstructure": (140, 140, 150),
+        "funnel": (60, 60, 70),
+        "rotor_hub": (60, 60, 60),
+    }
+
     def __init__(self, scene: Scene, camera: Camera):
         self.scene = scene
         self.camera = camera
@@ -102,6 +145,10 @@ class Renderer:
         # Rendering settings
         self.background_temp_k = 290.0  # Ambient temperature
         self.atmosphere_attenuation = 0.0001  # Per meter
+
+        # Visible mode settings
+        self.sky_color = (135, 180, 220)  # Light blue sky
+        self.ground_color = (120, 130, 100)  # Greenish ground
 
         # Cache for 3D models
         self._model_cache: Dict[str, Any] = {}
@@ -111,6 +158,10 @@ class Renderer:
 
         # Use 3D models when available
         self.use_3d_models = True
+
+    def _is_visible_mode(self) -> bool:
+        """Check if camera is in visible light mode."""
+        return self.camera.spectrum == SpectrumMode.VISIBLE
 
     def render_frame(self, time_sec: float, frame_number: int = 0) -> RenderedFrame:
         """Render a frame at the given time.
@@ -129,24 +180,33 @@ class Renderer:
         # Get resolution
         width, height = self.camera.resolution
 
-        # Create temperature map
-        temp_map = np.full((height, width), self.background_temp_k, dtype=np.float32)
-
-        # Get object states and render each
+        # Get object states
         object_states = self.scene.get_object_states_at(time_sec)
 
-        for obj_state in object_states:
-            self._render_object_to_map(
-                temp_map, obj_state, cam_pos, cam_ori, self.camera.get_fov()
+        # Check rendering mode
+        if self._is_visible_mode():
+            # Visible light rendering - direct to RGB
+            image = self._render_visible_frame(
+                width, height, object_states, cam_pos, cam_ori, self.camera.get_fov()
             )
+            temp_map = None  # No temperature data in visible mode
+        else:
+            # Thermal rendering
+            # Create temperature map
+            temp_map = np.full((height, width), self.background_temp_k, dtype=np.float32)
 
-        # Apply noise based on sensitivity
-        netd = self.camera.get_netd() / 1000.0  # Convert mK to K
-        noise = np.random.normal(0, netd, temp_map.shape)
-        temp_map = temp_map + noise
+            for obj_state in object_states:
+                self._render_object_to_map(
+                    temp_map, obj_state, cam_pos, cam_ori, self.camera.get_fov()
+                )
 
-        # Convert to RGB using colormap
-        image = self._apply_colormap(temp_map, self.camera.colormap)
+            # Apply noise based on sensitivity
+            netd = self.camera.get_netd() / 1000.0  # Convert mK to K
+            noise = np.random.normal(0, netd, temp_map.shape)
+            temp_map = temp_map + noise
+
+            # Convert to RGB using colormap
+            image = self._apply_colormap(temp_map, self.camera.colormap)
 
         return RenderedFrame(
             image=image,
@@ -611,6 +671,240 @@ class Renderer:
                 x2 = min(width - 1, int(intersections[i + 1]))
                 if x1 <= x2:
                     temp_map[y, x1:x2 + 1] = temperature
+
+    def _render_visible_frame(self, width: int, height: int,
+                              object_states: List[Dict[str, Any]],
+                              cam_pos: Position3D, cam_ori: Orientation3D,
+                              fov_deg: float) -> NDArray:
+        """Render a frame in visible light mode with realistic colors.
+
+        Args:
+            width: Image width
+            height: Image height
+            object_states: List of object state dicts
+            cam_pos: Camera position
+            cam_ori: Camera orientation
+            fov_deg: Field of view
+
+        Returns:
+            RGB image as (H, W, 3) uint8 array
+        """
+        # Create image with sky background
+        image = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Sky gradient (lighter at horizon)
+        for y in range(height):
+            # Blend from deep blue (top) to lighter blue (bottom)
+            blend = y / height
+            sky_r = int(self.sky_color[0] * (0.6 + 0.4 * blend))
+            sky_g = int(self.sky_color[1] * (0.7 + 0.3 * blend))
+            sky_b = int(self.sky_color[2] * (0.8 + 0.2 * blend))
+            image[y, :] = (sky_r, sky_g, sky_b)
+
+        # Render each object
+        for obj_state in object_states:
+            self._render_visible_object(image, obj_state, cam_pos, cam_ori, fov_deg)
+
+        return image
+
+    def _render_visible_object(self, image: NDArray,
+                               obj_state: Dict[str, Any],
+                               cam_pos: Position3D,
+                               cam_ori: Orientation3D,
+                               fov_deg: float):
+        """Render a single object in visible light mode.
+
+        Args:
+            image: RGB image to render onto
+            obj_state: Object state dict
+            cam_pos: Camera position
+            cam_ori: Camera orientation
+            fov_deg: Field of view
+        """
+        obj_type: str = obj_state["type"]
+
+        # Try to use 3D model if available
+        if self.use_3d_models:
+            model = self._get_3d_model(obj_type)
+            if model is not None:
+                self._render_visible_3d_model(image, model, obj_state, cam_pos, cam_ori, fov_deg)
+                return
+
+        # Fallback: simple colored rectangle
+        obj_pos: Position3D = obj_state["position"]
+        obj_ori: Orientation3D = obj_state["orientation"]
+
+        dx = obj_pos.x - cam_pos.x
+        dy = obj_pos.y - cam_pos.y
+        dz = obj_pos.z - cam_pos.z
+        distance = np.sqrt(dx**2 + dy**2 + dz**2)
+
+        if distance < 1:
+            return
+
+        # Get default color for this object type
+        color = self.VISIBLE_COLORS.get(obj_type, {}).get("body", (140, 140, 140))
+
+        # Calculate screen position (simplified)
+        bearing = np.degrees(np.arctan2(dx, dy)) % 360
+        elevation = np.degrees(np.arctan2(-dz, np.sqrt(dx**2 + dy**2)))
+        rel_bearing = (bearing - cam_ori.heading + 180) % 360 - 180
+        rel_elevation = elevation - cam_ori.pitch
+
+        half_fov = fov_deg / 2
+        if abs(rel_bearing) > half_fov or abs(rel_elevation) > half_fov:
+            return
+
+        h, w = image.shape[:2]
+        px = int(w / 2 + (rel_bearing / half_fov) * (w / 2))
+        py = int(h / 2 - (rel_elevation / half_fov) * (h / 2))
+
+        obj_size = self._get_object_size(obj_type)
+        angular_size = np.degrees(np.arctan2(obj_size, distance))
+        pixel_size = max(2, int((angular_size / fov_deg) * min(w, h)))
+
+        half = pixel_size // 2
+        y1, y2 = max(0, py - half), min(h, py + half)
+        x1, x2 = max(0, px - half), min(w, px + half)
+
+        if y2 > y1 and x2 > x1:
+            image[y1:y2, x1:x2] = color
+
+    def _render_visible_3d_model(self, image: NDArray,
+                                  model: Dict[str, Any],
+                                  obj_state: Dict[str, Any],
+                                  cam_pos: Position3D,
+                                  cam_ori: Orientation3D,
+                                  fov_deg: float):
+        """Render a 3D model in visible light mode with realistic colors.
+
+        Args:
+            image: RGB image to render onto
+            model: 3D model dict
+            obj_state: Object state dict
+            cam_pos: Camera position
+            cam_ori: Camera orientation
+            fov_deg: Field of view
+        """
+        obj_pos: Position3D = obj_state["position"]
+        obj_ori: Orientation3D = obj_state["orientation"]
+        obj_type: str = obj_state["type"]
+
+        actual_size = self._get_object_size(obj_type)
+        model_vertices_raw = model.get("vertices", [])
+        if len(model_vertices_raw) == 0:
+            return
+
+        verts_array = np.array(model_vertices_raw)
+        model_vertices = verts_array.tolist()
+        model_size = np.max(verts_array.max(axis=0) - verts_array.min(axis=0))
+        scale = actual_size / max(model_size, 0.1)
+
+        # Transform and project vertices
+        world_verts = self._transform_vertices(model_vertices, obj_pos, obj_ori, scale)
+        height, width = image.shape[:2]
+        projected = self._project_to_camera(world_verts, cam_pos, cam_ori, fov_deg, width, height)
+
+        # Get distance for atmospheric effects
+        dx = obj_pos.x - cam_pos.x
+        dy = obj_pos.y - cam_pos.y
+        dz = obj_pos.z - cam_pos.z
+        distance = np.sqrt(dx**2 + dy**2 + dz**2)
+
+        if distance < 1:
+            return
+
+        # Atmospheric haze factor (objects fade to sky color with distance)
+        haze_factor = 1.0 - np.exp(-distance * 0.0003)
+
+        # Get object-specific colors or use defaults
+        obj_colors = self.VISIBLE_COLORS.get(obj_type, {})
+        thermal_zones = model.get("thermal_zones", {})
+
+        # Render each face
+        faces = model.get("faces", [])
+        for face_idx, face in enumerate(faces):
+            face_points = []
+            behind_camera = False
+
+            for vi in face:
+                if vi >= len(projected) or projected[vi] is None:
+                    behind_camera = True
+                    break
+                face_points.append(projected[vi])
+
+            if behind_camera or len(face_points) < 3:
+                continue
+
+            # Get zone name and color
+            zone_name = thermal_zones.get(face_idx, "body")
+            if isinstance(zone_name, str):
+                zone_key = zone_name.lower()
+                # Try object-specific color, then default zone color
+                if zone_key in obj_colors:
+                    base_color = obj_colors[zone_key]
+                elif zone_key in self.VISIBLE_ZONE_COLORS:
+                    base_color = self.VISIBLE_ZONE_COLORS[zone_key]
+                else:
+                    base_color = obj_colors.get("body", (140, 140, 140))
+            else:
+                base_color = obj_colors.get("body", (140, 140, 140))
+
+            # Apply atmospheric haze (blend toward sky color)
+            final_color = tuple(
+                int(base_color[i] * (1 - haze_factor) + self.sky_color[i] * haze_factor)
+                for i in range(3)
+            )
+
+            # Fill the polygon with this color
+            self._fill_visible_polygon(image, face_points, final_color)
+
+    def _fill_visible_polygon(self, image: NDArray,
+                              points: List[Tuple[int, int, float]],
+                              color: Tuple[int, int, int]):
+        """Fill a polygon on the RGB image using scanline algorithm.
+
+        Args:
+            image: RGB image to render onto (H, W, 3)
+            points: List of (px, py, depth) screen coordinates
+            color: RGB color tuple
+        """
+        if len(points) < 3:
+            return
+
+        height, width = image.shape[:2]
+        pts = [(p[0], p[1]) for p in points]
+
+        min_x = max(0, min(p[0] for p in pts))
+        max_x = min(width - 1, max(p[0] for p in pts))
+        min_y = max(0, min(p[1] for p in pts))
+        max_y = min(height - 1, max(p[1] for p in pts))
+
+        if min_x >= max_x or min_y >= max_y:
+            return
+
+        for y in range(min_y, max_y + 1):
+            intersections = []
+            n = len(pts)
+            for i in range(n):
+                p1 = pts[i]
+                p2 = pts[(i + 1) % n]
+
+                if (p1[1] <= y < p2[1]) or (p2[1] <= y < p1[1]):
+                    if p2[1] != p1[1]:
+                        x = p1[0] + (y - p1[1]) * (p2[0] - p1[0]) / (p2[1] - p1[1])
+                        intersections.append(x)
+
+            if len(intersections) < 2:
+                continue
+
+            intersections.sort()
+
+            for i in range(0, len(intersections) - 1, 2):
+                x1 = max(0, int(intersections[i]))
+                x2 = min(width - 1, int(intersections[i + 1]))
+                if x1 <= x2:
+                    image[y, x1:x2 + 1] = color
 
     def _apply_colormap(self, temp_map: NDArray, colormap_name: str) -> NDArray:
         """Apply colormap to temperature map.
