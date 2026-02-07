@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from eosim.studio.scene import Scene, Position3D, Orientation3D
 from eosim.studio.camera import Camera, SpectrumMode
+from eosim.studio.weather import WeatherSystem, WeatherConditions, StormType, FogType
 
 
 def _load_model_library():
@@ -159,6 +160,9 @@ class Renderer:
         # Use 3D models when available
         self.use_3d_models = True
 
+        # Weather effect state
+        self._last_lightning_time = -10.0  # Track lightning flashes
+
     def _is_visible_mode(self) -> bool:
         """Check if camera is in visible light mode."""
         return self.camera.spectrum == SpectrumMode.VISIBLE
@@ -183,12 +187,21 @@ class Renderer:
         # Get object states
         object_states = self.scene.get_object_states_at(time_sec)
 
+        # Get weather conditions
+        weather = self.scene.get_weather() if hasattr(self.scene, 'get_weather') else None
+        weather_system = self.scene.get_weather_system() if hasattr(self.scene, 'get_weather_system') else None
+
         # Check rendering mode
         if self._is_visible_mode():
             # Visible light rendering - direct to RGB
             image = self._render_visible_frame(
-                width, height, object_states, cam_pos, cam_ori, self.camera.get_fov()
+                width, height, object_states, cam_pos, cam_ori, self.camera.get_fov(), weather
             )
+
+            # Apply weather effects (precipitation, fog overlay)
+            if weather is not None:
+                image = self._apply_weather_effects_visible(image, weather, weather_system, time_sec)
+
             temp_map = None  # No temperature data in visible mode
         else:
             # Thermal rendering
@@ -209,6 +222,10 @@ class Renderer:
                 self._render_object_to_map(
                     temp_map, obj_state, cam_pos, cam_ori, self.camera.get_fov()
                 )
+
+            # Apply weather effects to thermal
+            if weather is not None:
+                temp_map = self._apply_weather_effects_thermal(temp_map, weather)
 
             # Apply noise based on sensitivity
             netd = self.camera.get_netd() / 1000.0  # Convert mK to K
@@ -685,7 +702,8 @@ class Renderer:
     def _render_visible_frame(self, width: int, height: int,
                               object_states: List[Dict[str, Any]],
                               cam_pos: Position3D, cam_ori: Orientation3D,
-                              fov_deg: float) -> NDArray:
+                              fov_deg: float,
+                              weather: Optional[WeatherConditions] = None) -> NDArray:
         """Render a frame in visible light mode with realistic colors.
 
         Args:
@@ -695,6 +713,7 @@ class Renderer:
             cam_pos: Camera position
             cam_ori: Camera orientation
             fov_deg: Field of view
+            weather: Optional weather conditions
 
         Returns:
             RGB image as (H, W, 3) uint8 array
@@ -702,19 +721,22 @@ class Renderer:
         # Create image with sky background
         image = np.zeros((height, width, 3), dtype=np.uint8)
 
+        # Get sky color (modified by weather)
+        sky_color = self._get_weather_sky_color(weather)
+
         # Check if terrain is available
         terrain = self.scene.get_terrain() if hasattr(self.scene, 'get_terrain') else None
 
         if terrain is not None and terrain.visible_map is not None:
-            # Render terrain as background
-            self._render_terrain_visible(image, terrain, cam_pos, cam_ori, fov_deg)
+            # Render terrain as background with weather effects
+            self._render_terrain_visible(image, terrain, cam_pos, cam_ori, fov_deg, weather)
         else:
             # Default sky gradient (lighter at horizon)
             for y in range(height):
                 blend = y / height
-                sky_r = int(self.sky_color[0] * (0.6 + 0.4 * blend))
-                sky_g = int(self.sky_color[1] * (0.7 + 0.3 * blend))
-                sky_b = int(self.sky_color[2] * (0.8 + 0.2 * blend))
+                sky_r = int(sky_color[0] * (0.6 + 0.4 * blend))
+                sky_g = int(sky_color[1] * (0.7 + 0.3 * blend))
+                sky_b = int(sky_color[2] * (0.8 + 0.2 * blend))
                 image[y, :] = (sky_r, sky_g, sky_b)
 
         # Render each object
@@ -723,8 +745,276 @@ class Renderer:
 
         return image
 
+    def _get_weather_sky_color(self, weather: Optional[WeatherConditions]) -> Tuple[int, int, int]:
+        """Get sky color modified by weather conditions.
+
+        Args:
+            weather: Weather conditions or None
+
+        Returns:
+            RGB sky color tuple
+        """
+        if weather is None:
+            return self.sky_color
+
+        # Start with base sky color
+        r, g, b = self.sky_color
+
+        # Darken for clouds
+        cloud_coverage = weather.cloud_coverage
+        darkness = cloud_coverage * 0.4
+        r = int(r * (1 - darkness))
+        g = int(g * (1 - darkness))
+        b = int(b * (1 - darkness * 0.8))  # Keep blue-ish
+
+        # Fog/haze shifts color
+        if weather.fog_type != FogType.NONE:
+            fog_gray = 180
+            fog_blend = min(0.5, weather.fog_density * 0.3)
+            r = int(r * (1 - fog_blend) + fog_gray * fog_blend)
+            g = int(g * (1 - fog_blend) + fog_gray * fog_blend)
+            b = int(b * (1 - fog_blend) + fog_gray * fog_blend)
+
+        # Storm darkening
+        if weather.storm_type != StormType.NONE:
+            storm_factor = weather.storm_intensity * 0.5
+            r = int(r * (1 - storm_factor))
+            g = int(g * (1 - storm_factor))
+            b = int(b * (1 - storm_factor))
+
+            # Sandstorm adds yellow/brown tint
+            if weather.storm_type == StormType.SANDSTORM:
+                r = min(255, int(r + 40 * weather.storm_intensity))
+                g = min(255, int(g + 20 * weather.storm_intensity))
+                b = max(0, int(b - 30 * weather.storm_intensity))
+
+        return (max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b)))
+
+    def _apply_weather_effects_visible(self, image: NDArray,
+                                        weather: WeatherConditions,
+                                        weather_system: Optional[WeatherSystem],
+                                        time_sec: float) -> NDArray:
+        """Apply weather overlay effects to visible image.
+
+        Args:
+            image: RGB image to modify
+            weather: Weather conditions
+            weather_system: Weather system for advanced effects
+            time_sec: Current time
+
+        Returns:
+            Modified RGB image
+        """
+        height, width = image.shape[:2]
+        result = image.copy()
+
+        # Apply fog overlay
+        if weather.fog_type != FogType.NONE:
+            result = self._apply_fog_overlay(result, weather)
+
+        # Add precipitation particles
+        if weather.precipitation.value != "none":
+            result = self._render_precipitation(result, weather)
+
+        # Lightning flash
+        if weather.lightning_active and weather_system is not None:
+            if weather_system.is_lightning_flash(time_sec):
+                # Bright flash across whole image
+                flash_intensity = np.random.uniform(0.3, 0.8)
+                flash = np.full_like(result, 255)
+                result = (result.astype(float) * (1 - flash_intensity) +
+                         flash.astype(float) * flash_intensity).astype(np.uint8)
+                self._last_lightning_time = time_sec
+            elif time_sec - self._last_lightning_time < 0.1:
+                # Brief afterglow
+                afterglow = 0.2 * (1 - (time_sec - self._last_lightning_time) / 0.1)
+                flash = np.full_like(result, 255)
+                result = (result.astype(float) * (1 - afterglow) +
+                         flash.astype(float) * afterglow).astype(np.uint8)
+
+        return result
+
+    def _apply_fog_overlay(self, image: NDArray, weather: WeatherConditions) -> NDArray:
+        """Apply fog/mist overlay to image.
+
+        Args:
+            image: RGB image
+            weather: Weather conditions
+
+        Returns:
+            Modified image with fog
+        """
+        height, width = image.shape[:2]
+
+        # Fog color (grayish-white)
+        fog_color = np.array([200, 200, 210], dtype=np.float32)
+
+        # Fog intensity based on type and density
+        fog_intensities = {
+            FogType.NONE: 0.0,
+            FogType.MIST: 0.1,
+            FogType.FOG_LIGHT: 0.2,
+            FogType.FOG_MODERATE: 0.4,
+            FogType.FOG_DENSE: 0.6,
+            FogType.FOG_FREEZING: 0.5,
+            FogType.HAZE: 0.15,
+            FogType.SMOKE: 0.3,
+        }
+        base_intensity = fog_intensities.get(weather.fog_type, 0.0)
+        intensity = base_intensity * weather.fog_density
+
+        if intensity <= 0:
+            return image
+
+        # Create fog gradient (thicker at distance/horizon)
+        fog_mask = np.zeros((height, width), dtype=np.float32)
+        for y in range(height):
+            # More fog toward horizon (middle of image)
+            horizon_factor = 1.0 - abs(y - height * 0.4) / (height * 0.6)
+            horizon_factor = max(0, horizon_factor)
+            fog_mask[y, :] = intensity * (0.5 + 0.5 * horizon_factor)
+
+        # Add some noise for texture
+        noise = np.random.normal(0, 0.05, fog_mask.shape).astype(np.float32)
+        fog_mask = np.clip(fog_mask + noise, 0, 1)
+
+        # Blend with fog color
+        result = image.astype(np.float32)
+        for c in range(3):
+            result[:, :, c] = result[:, :, c] * (1 - fog_mask) + fog_color[c] * fog_mask
+
+        return np.clip(result, 0, 255).astype(np.uint8)
+
+    def _render_precipitation(self, image: NDArray, weather: WeatherConditions) -> NDArray:
+        """Render precipitation particles (rain, snow, etc.).
+
+        Args:
+            image: RGB image
+            weather: Weather conditions
+
+        Returns:
+            Modified image with precipitation
+        """
+        height, width = image.shape[:2]
+        result = image.copy()
+
+        precip = weather.precipitation.value
+        if precip == "none":
+            return result
+
+        # Determine particle properties
+        is_snow = "snow" in precip
+        is_hail = "hail" in precip
+
+        # Number of particles based on intensity
+        intensity_map = {
+            "drizzle": 50, "rain_light": 150, "rain_moderate": 400,
+            "rain_heavy": 800, "rain_torrential": 1500,
+            "snow_light": 100, "snow_moderate": 300, "snow_heavy": 600,
+            "sleet": 200, "hail": 150, "freezing_rain": 300,
+        }
+        n_particles = int(intensity_map.get(precip, 100) * weather.precipitation_intensity)
+        n_particles = min(n_particles, 2000)  # Cap for performance
+
+        if n_particles <= 0:
+            return result
+
+        # Generate random particle positions
+        np.random.seed(None)  # Ensure randomness each frame
+        x_pos = np.random.randint(0, width, n_particles)
+        y_pos = np.random.randint(0, height, n_particles)
+
+        if is_snow:
+            # Snow: white/light blue, larger, round
+            color = (240, 245, 255)
+            sizes = np.random.randint(2, 5, n_particles)
+            for i in range(n_particles):
+                x, y, s = x_pos[i], y_pos[i], sizes[i]
+                y1, y2 = max(0, y-s), min(height, y+s)
+                x1, x2 = max(0, x-s), min(width, x+s)
+                if y2 > y1 and x2 > x1:
+                    # Blend (semi-transparent)
+                    blend = 0.7
+                    result[y1:y2, x1:x2] = (
+                        result[y1:y2, x1:x2].astype(float) * (1-blend) +
+                        np.array(color) * blend
+                    ).astype(np.uint8)
+        elif is_hail:
+            # Hail: white, larger, round
+            color = (230, 235, 240)
+            sizes = np.random.randint(3, 7, n_particles)
+            for i in range(n_particles):
+                x, y, s = x_pos[i], y_pos[i], sizes[i]
+                y1, y2 = max(0, y-s), min(height, y+s)
+                x1, x2 = max(0, x-s), min(width, x+s)
+                if y2 > y1 and x2 > x1:
+                    result[y1:y2, x1:x2] = color
+        else:
+            # Rain: streaks
+            streak_length = np.random.randint(5, 15, n_particles)
+            color = (180, 190, 200)
+
+            # Apply wind angle
+            wind_angle = np.radians(weather.wind_direction + 90)  # Convert to screen angle
+            dx = int(3 * np.sin(wind_angle))
+
+            for i in range(n_particles):
+                x, y, length = x_pos[i], y_pos[i], streak_length[i]
+                for j in range(length):
+                    py = y + j
+                    px = x + (j * dx) // length
+                    if 0 <= py < height and 0 <= px < width:
+                        # Semi-transparent streak
+                        alpha = 0.3
+                        result[py, px] = (
+                            result[py, px].astype(float) * (1-alpha) +
+                            np.array(color) * alpha
+                        ).astype(np.uint8)
+
+        return result
+
+    def _apply_weather_effects_thermal(self, temp_map: NDArray,
+                                        weather: WeatherConditions) -> NDArray:
+        """Apply weather effects to thermal temperature map.
+
+        Args:
+            temp_map: Temperature map (2D float array)
+            weather: Weather conditions
+
+        Returns:
+            Modified temperature map
+        """
+        result = temp_map.copy()
+
+        # Apply thermal attenuation from weather
+        attenuation = weather.thermal_attenuation
+        ambient_k = weather.temperature_c + 273.15
+
+        # Blend toward ambient based on attenuation loss
+        loss = 1.0 - attenuation
+        result = result * attenuation + ambient_k * loss
+
+        # Add thermal noise from precipitation/storms
+        noise_k = weather.thermal_noise_k
+        if noise_k > 0:
+            noise = np.random.normal(0, noise_k, result.shape)
+            result = result + noise
+
+        # Cloud cover affects sky temperature
+        if weather.cloud_coverage > 0:
+            # Warmer sky with clouds (cloud base radiates)
+            # Assuming upper portion is sky
+            height = result.shape[0]
+            horizon = int(height * 0.4)
+            cloud_temp = 260 + weather.cloud_coverage * 20  # Clouds are warmer than clear sky
+            blend = weather.cloud_coverage * 0.5
+            result[:horizon, :] = result[:horizon, :] * (1 - blend) + cloud_temp * blend
+
+        return result
+
     def _render_terrain_visible(self, image: NDArray, terrain, cam_pos: Position3D,
-                                cam_ori: Orientation3D, fov_deg: float):
+                                cam_ori: Orientation3D, fov_deg: float,
+                                weather: Optional[WeatherConditions] = None):
         """Render terrain in visible mode.
 
         Args:
@@ -733,6 +1023,7 @@ class Renderer:
             cam_pos: Camera position
             cam_ori: Camera orientation
             fov_deg: Field of view
+            weather: Optional weather conditions
         """
         height, width = image.shape[:2]
         half_fov = fov_deg / 2
@@ -744,13 +1035,22 @@ class Renderer:
         radius = terrain.config.radius_m
         resolution = terrain.config.grid_resolution
 
+        # Get sky color (weather-modified)
+        sky_color = self._get_weather_sky_color(weather)
+
+        # Calculate visibility for fog effects
+        visibility_factor = 1.0
+        if weather is not None:
+            visibility = weather.visibility_m
+            visibility_factor = min(1.0, visibility / 10000.0)
+
         # Sky in upper portion
         horizon_line = int(height * 0.4)  # Approximate horizon
         for y in range(horizon_line):
             blend = y / horizon_line
-            sky_r = int(self.sky_color[0] * (0.6 + 0.4 * blend))
-            sky_g = int(self.sky_color[1] * (0.7 + 0.3 * blend))
-            sky_b = int(self.sky_color[2] * (0.8 + 0.2 * blend))
+            sky_r = int(sky_color[0] * (0.6 + 0.4 * blend))
+            sky_g = int(sky_color[1] * (0.7 + 0.3 * blend))
+            sky_b = int(sky_color[2] * (0.8 + 0.2 * blend))
             image[y, :] = (sky_r, sky_g, sky_b)
 
         # Render terrain below horizon
@@ -786,11 +1086,12 @@ class Renderer:
                 color = terrain_visible[t_row, t_col]
 
                 # Apply distance fog (blend toward sky color)
-                fog_factor = min(1.0, view_dist / (radius * 0.8))
+                # Weather reduces visibility, increasing fog effect
+                fog_factor = min(1.0, view_dist / (radius * 0.8 * visibility_factor))
                 fog_factor = fog_factor ** 2  # Quadratic falloff
 
                 final_color = tuple(
-                    int(color[i] * (1 - fog_factor * 0.5) + self.sky_color[i] * fog_factor * 0.5)
+                    int(color[i] * (1 - fog_factor * 0.5) + sky_color[i] * fog_factor * 0.5)
                     for i in range(3)
                 )
                 image[y, x] = final_color

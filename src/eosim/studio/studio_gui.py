@@ -21,6 +21,9 @@ from eosim.studio.camera import Camera, LensType, SpectrumMode, SensitivityLevel
 from eosim.studio.timeline import Timeline, PlaybackState
 from eosim.studio.renderer import Renderer, RenderedFrame
 from eosim.studio.terrain import TerrainProvider, DetailLevel
+from eosim.studio.weather import (
+    WEATHER_PRESETS, CloudType, PrecipitationType, FogType, StormType, WindSpeed
+)
 
 
 class TimelineWidget(ttk.Frame):
@@ -845,6 +848,241 @@ class TerrainSettingsWidget(ttk.Frame):
             self.on_change()
 
 
+class WeatherSettingsWidget(ttk.Frame):
+    """Weather configuration panel."""
+
+    def __init__(self, parent, scene: Scene, on_change=None):
+        super().__init__(parent)
+        self.scene = scene
+        self.on_change = on_change
+
+        self._build_ui()
+
+    def _build_ui(self):
+        # Header
+        ttk.Label(self, text="Weather Settings",
+                 font=("Segoe UI", 10, "bold")).pack(anchor=tk.W, pady=5)
+
+        # Enable weather checkbox
+        self.enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self, text="Enable Weather",
+                       variable=self.enabled_var,
+                       command=self._on_enabled_changed).pack(anchor=tk.W)
+
+        # Weather settings frame (initially hidden)
+        self.settings_frame = ttk.LabelFrame(self, text="Conditions", padding=5)
+
+        # Weather preset dropdown
+        ttk.Label(self.settings_frame, text="Preset:").pack(anchor=tk.W)
+        presets = list(WEATHER_PRESETS.keys())
+        self.preset_var = tk.StringVar(value="clear_day")
+        preset_combo = ttk.Combobox(self.settings_frame, textvariable=self.preset_var,
+                                    values=presets, state="readonly", width=18)
+        preset_combo.pack(fill=tk.X, pady=2)
+        preset_combo.bind("<<ComboboxSelected>>", self._on_preset_changed)
+
+        # Preset description
+        self.preset_desc_var = tk.StringVar(value="")
+        ttk.Label(self.settings_frame, textvariable=self.preset_desc_var,
+                 font=("Segoe UI", 7), wraplength=180).pack(anchor=tk.W)
+
+        # Cloud settings
+        cloud_frame = ttk.LabelFrame(self.settings_frame, text="Clouds", padding=3)
+        cloud_frame.pack(fill=tk.X, pady=3)
+
+        ttk.Label(cloud_frame, text="Coverage:").pack(anchor=tk.W)
+        self.cloud_coverage_var = tk.DoubleVar(value=0.0)
+        cloud_scale = ttk.Scale(cloud_frame, from_=0, to=100,
+                               variable=self.cloud_coverage_var, orient=tk.HORIZONTAL,
+                               command=self._on_cloud_changed)
+        cloud_scale.pack(fill=tk.X)
+        self.cloud_label = ttk.Label(cloud_frame, text="0%")
+        self.cloud_label.pack(anchor=tk.E)
+
+        # Precipitation settings
+        precip_frame = ttk.LabelFrame(self.settings_frame, text="Precipitation", padding=3)
+        precip_frame.pack(fill=tk.X, pady=3)
+
+        precip_types = ["none", "drizzle", "rain_light", "rain_moderate", "rain_heavy",
+                       "snow_light", "snow_moderate", "snow_heavy", "hail"]
+        self.precip_var = tk.StringVar(value="none")
+        precip_combo = ttk.Combobox(precip_frame, textvariable=self.precip_var,
+                                    values=precip_types, state="readonly", width=14)
+        precip_combo.pack(fill=tk.X)
+        precip_combo.bind("<<ComboboxSelected>>", self._on_precip_changed)
+
+        # Fog settings
+        fog_frame = ttk.LabelFrame(self.settings_frame, text="Visibility", padding=3)
+        fog_frame.pack(fill=tk.X, pady=3)
+
+        fog_types = ["none", "mist", "fog_light", "fog_moderate", "fog_dense", "haze", "smoke"]
+        self.fog_var = tk.StringVar(value="none")
+        fog_combo = ttk.Combobox(fog_frame, textvariable=self.fog_var,
+                                 values=fog_types, state="readonly", width=14)
+        fog_combo.pack(fill=tk.X)
+        fog_combo.bind("<<ComboboxSelected>>", self._on_fog_changed)
+
+        # Storm settings
+        storm_frame = ttk.LabelFrame(self.settings_frame, text="Storm", padding=3)
+        storm_frame.pack(fill=tk.X, pady=3)
+
+        storm_types = ["none", "thunderstorm", "sandstorm", "dust_storm", "blizzard"]
+        self.storm_var = tk.StringVar(value="none")
+        storm_combo = ttk.Combobox(storm_frame, textvariable=self.storm_var,
+                                   values=storm_types, state="readonly", width=14)
+        storm_combo.pack(fill=tk.X)
+        storm_combo.bind("<<ComboboxSelected>>", self._on_storm_changed)
+
+        ttk.Label(storm_frame, text="Intensity:").pack(anchor=tk.W)
+        self.storm_intensity_var = tk.DoubleVar(value=50.0)
+        storm_scale = ttk.Scale(storm_frame, from_=0, to=100,
+                               variable=self.storm_intensity_var, orient=tk.HORIZONTAL,
+                               command=self._on_storm_intensity_changed)
+        storm_scale.pack(fill=tk.X)
+
+        # Wind settings
+        wind_frame = ttk.LabelFrame(self.settings_frame, text="Wind", padding=3)
+        wind_frame.pack(fill=tk.X, pady=3)
+
+        wind_speeds = ["calm", "light", "moderate", "strong", "gale", "storm"]
+        self.wind_var = tk.StringVar(value="calm")
+        wind_combo = ttk.Combobox(wind_frame, textvariable=self.wind_var,
+                                  values=wind_speeds, state="readonly", width=10)
+        wind_combo.pack(side=tk.LEFT)
+        wind_combo.bind("<<ComboboxSelected>>", self._on_wind_changed)
+
+        ttk.Label(wind_frame, text="Dir:").pack(side=tk.LEFT, padx=3)
+        self.wind_dir_var = tk.StringVar(value="0")
+        wind_dir_entry = ttk.Entry(wind_frame, textvariable=self.wind_dir_var, width=4)
+        wind_dir_entry.pack(side=tk.LEFT)
+        ttk.Label(wind_frame, text="deg").pack(side=tk.LEFT)
+
+        # Temperature
+        temp_frame = ttk.LabelFrame(self.settings_frame, text="Temperature", padding=3)
+        temp_frame.pack(fill=tk.X, pady=3)
+
+        self.temp_var = tk.DoubleVar(value=20.0)
+        temp_scale = ttk.Scale(temp_frame, from_=-30, to=50,
+                              variable=self.temp_var, orient=tk.HORIZONTAL,
+                              command=self._on_temp_changed)
+        temp_scale.pack(fill=tk.X)
+        self.temp_label = ttk.Label(temp_frame, text="20.0 C")
+        self.temp_label.pack(anchor=tk.E)
+
+        # Apply button
+        ttk.Button(self.settings_frame, text="Apply Weather",
+                  command=self._apply_weather).pack(fill=tk.X, pady=5)
+
+        # Status label
+        self.status_var = tk.StringVar(value="No weather set")
+        ttk.Label(self, textvariable=self.status_var,
+                 font=("Consolas", 8)).pack(anchor=tk.W, pady=2)
+
+        # Update preset description
+        self._update_preset_desc()
+
+    def _on_enabled_changed(self):
+        if self.enabled_var.get():
+            self.settings_frame.pack(fill=tk.X, pady=5)
+        else:
+            self.settings_frame.pack_forget()
+            # Clear weather from scene
+            if hasattr(self.scene, '_weather_conditions'):
+                self.scene._weather_conditions = None
+                self.scene._weather_system = None
+                self.status_var.set("Weather disabled")
+                self._notify_change()
+
+    def _on_preset_changed(self, event=None):
+        self._update_preset_desc()
+        # Auto-apply preset values
+        preset_name = self.preset_var.get()
+        if preset_name in WEATHER_PRESETS:
+            preset = WEATHER_PRESETS[preset_name]
+            cond = preset.conditions
+            self.cloud_coverage_var.set(cond.cloud_coverage * 100)
+            self.precip_var.set(cond.precipitation.value)
+            self.fog_var.set(cond.fog_type.value)
+            self.storm_var.set(cond.storm_type.value)
+            self.storm_intensity_var.set(cond.storm_intensity * 100)
+            self.wind_var.set(cond.wind_speed.value)
+            self.temp_var.set(cond.temperature_c)
+            self._update_labels()
+
+    def _on_cloud_changed(self, value=None):
+        self.cloud_label.config(text=f"{int(self.cloud_coverage_var.get())}%")
+
+    def _on_precip_changed(self, event=None):
+        pass
+
+    def _on_fog_changed(self, event=None):
+        pass
+
+    def _on_storm_changed(self, event=None):
+        pass
+
+    def _on_storm_intensity_changed(self, value=None):
+        pass
+
+    def _on_wind_changed(self, event=None):
+        pass
+
+    def _on_temp_changed(self, value=None):
+        self.temp_label.config(text=f"{self.temp_var.get():.1f} C")
+
+    def _update_labels(self):
+        self.cloud_label.config(text=f"{int(self.cloud_coverage_var.get())}%")
+        self.temp_label.config(text=f"{self.temp_var.get():.1f} C")
+
+    def _update_preset_desc(self):
+        preset = self.preset_var.get()
+        if preset in WEATHER_PRESETS:
+            self.preset_desc_var.set(WEATHER_PRESETS[preset].description)
+        else:
+            self.preset_desc_var.set("")
+
+    def _apply_weather(self):
+        """Apply weather settings to the scene."""
+        preset = self.preset_var.get()
+
+        try:
+            self.status_var.set("Applying weather...")
+            self.update()
+
+            # Set weather on scene
+            self.scene.set_weather(
+                preset=preset,
+                cloud_coverage=self.cloud_coverage_var.get() / 100.0,
+                precipitation=self.precip_var.get(),
+                fog_type=self.fog_var.get(),
+                storm_type=self.storm_var.get(),
+                temperature_c=self.temp_var.get(),
+                humidity_percent=50.0  # Default
+            )
+
+            # Update storm intensity if applicable
+            weather = self.scene.get_weather()
+            if weather is not None:
+                weather.storm_intensity = self.storm_intensity_var.get() / 100.0
+                try:
+                    weather.wind_speed = WindSpeed(self.wind_var.get())
+                    weather.wind_direction = float(self.wind_dir_var.get())
+                except (ValueError, KeyError):
+                    pass
+
+            # Update status
+            self.status_var.set(f"Weather: {WEATHER_PRESETS.get(preset, {}).name if preset in WEATHER_PRESETS else preset}")
+
+            self._notify_change()
+
+        except Exception as e:
+            self.status_var.set(f"Error: {str(e)[:30]}")
+
+    def _notify_change(self):
+        if self.on_change:
+            self.on_change()
+
+
 class Studio:
     """Main EOSIM Studio application."""
 
@@ -916,6 +1154,11 @@ class Studio:
                                                       on_change=self._on_terrain_changed)
         self.terrain_settings.pack(fill=tk.X, pady=5)
 
+        # Weather settings
+        self.weather_settings = WeatherSettingsWidget(right_frame, self.project.scene,
+                                                      on_change=self._on_weather_changed)
+        self.weather_settings.pack(fill=tk.X, pady=5)
+
         # Render button
         ttk.Button(right_frame, text="Export Video...",
                   command=self._export_video).pack(fill=tk.X, pady=10)
@@ -979,6 +1222,10 @@ class Studio:
         """Handle terrain settings change."""
         self._on_time_changed(self.project.timeline.current_time)
 
+    def _on_weather_changed(self):
+        """Handle weather settings change."""
+        self._on_time_changed(self.project.timeline.current_time)
+
     def _on_object_selected(self, obj_id: str):
         """Handle object selection."""
         # Could show object properties panel
@@ -993,6 +1240,7 @@ class Studio:
         self.object_list.scene = self.project.scene
         self.object_list.refresh()
         self.terrain_settings.scene = self.project.scene
+        self.weather_settings.scene = self.project.scene
         self.root.title(f"EOSIM Studio - {self.project.name}")
         self._on_time_changed(0.0)
 
@@ -1010,6 +1258,7 @@ class Studio:
                 self.object_list.scene = self.project.scene
                 self.object_list.refresh()
                 self.terrain_settings.scene = self.project.scene
+                self.weather_settings.scene = self.project.scene
                 self.root.title(f"EOSIM Studio - {self.project.name}")
                 self._on_time_changed(0.0)
             except Exception as e:
@@ -1040,6 +1289,7 @@ class Studio:
         self.object_list.scene = self.project.scene
         self.object_list.refresh()
         self.terrain_settings.scene = self.project.scene
+        self.weather_settings.scene = self.project.scene
         self.root.title(f"EOSIM Studio - {self.project.name}")
         self._on_time_changed(0.0)
 

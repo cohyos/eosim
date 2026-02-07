@@ -271,6 +271,10 @@ class Scene:
         self._terrain_data = None
         self._terrain_provider = None
 
+        # Weather configuration
+        self._weather_system = None
+        self._weather_conditions = None
+
     def set_terrain(self, location: str = "mojave_desert",
                     radius_m: float = 5000.0,
                     detail: str = "low",
@@ -342,6 +346,114 @@ class Scene:
         if self._terrain_data is not None:
             return self._terrain_data.get_elevation_at(x, y)
         return self.ground_level
+
+    def set_weather(self, preset: str = "clear_day",
+                    cloud_type: str = None,
+                    cloud_coverage: float = None,
+                    precipitation: str = None,
+                    fog_type: str = None,
+                    storm_type: str = None,
+                    wind_speed: str = None,
+                    temperature_c: float = None,
+                    humidity_percent: float = None):
+        """Configure weather conditions for the scene.
+
+        Args:
+            preset: Weather preset name. Available presets:
+                - clear_day, partly_cloudy, overcast
+                - light_rain, heavy_rain, thunderstorm
+                - fog_morning, dense_fog
+                - snow_light, blizzard
+                - sandstorm, haze, tropical_storm
+                - freezing_fog, night_clear
+            cloud_type: Override cloud type (cirrus, cumulus, stratus, etc.)
+            cloud_coverage: Override cloud coverage (0.0-1.0)
+            precipitation: Override precipitation (none, rain_light, snow_heavy, etc.)
+            fog_type: Override fog (none, mist, fog_light, fog_dense, haze, smoke)
+            storm_type: Override storm (none, thunderstorm, sandstorm, blizzard)
+            wind_speed: Override wind (calm, light, moderate, strong, gale, storm)
+            temperature_c: Override ambient temperature in Celsius
+            humidity_percent: Override relative humidity (0-100)
+
+        Example:
+            >>> scene.set_weather("thunderstorm")
+            >>> scene.set_weather("clear_day", temperature_c=35.0)
+            >>> scene.set_weather("fog_morning", fog_type="fog_dense")
+        """
+        from eosim.studio.weather import (
+            WeatherSystem, WeatherConditions, WEATHER_PRESETS,
+            CloudType, PrecipitationType, FogType, StormType, WindSpeed
+        )
+
+        if self._weather_system is None:
+            self._weather_system = WeatherSystem()
+
+        # Start with preset
+        if preset in WEATHER_PRESETS:
+            self._weather_system.set_preset(preset)
+        else:
+            # Default to clear if unknown preset
+            self._weather_system.set_preset("clear_day")
+
+        # Apply overrides
+        conditions = self._weather_system.conditions
+
+        if cloud_type is not None:
+            try:
+                conditions.cloud_type = CloudType(cloud_type)
+            except ValueError:
+                pass
+
+        if cloud_coverage is not None:
+            conditions.cloud_coverage = max(0.0, min(1.0, cloud_coverage))
+
+        if precipitation is not None:
+            try:
+                conditions.precipitation = PrecipitationType(precipitation)
+            except ValueError:
+                pass
+
+        if fog_type is not None:
+            try:
+                conditions.fog_type = FogType(fog_type)
+            except ValueError:
+                pass
+
+        if storm_type is not None:
+            try:
+                conditions.storm_type = StormType(storm_type)
+            except ValueError:
+                pass
+
+        if wind_speed is not None:
+            try:
+                conditions.wind_speed = WindSpeed(wind_speed)
+            except ValueError:
+                pass
+
+        if temperature_c is not None:
+            conditions.temperature_c = temperature_c
+
+        if humidity_percent is not None:
+            conditions.humidity_percent = max(0.0, min(100.0, humidity_percent))
+
+        self._weather_conditions = conditions
+
+        # Update ambient temperature based on weather
+        self.ambient_temperature_k = conditions.temperature_c + 273.15
+
+    def get_weather(self):
+        """Get the weather conditions, or None if not configured."""
+        return self._weather_conditions
+
+    def get_weather_system(self):
+        """Get the weather system for advanced control."""
+        return self._weather_system
+
+    def get_weather_presets(self) -> dict:
+        """Get available weather presets with descriptions."""
+        from eosim.studio.weather import WEATHER_PRESETS
+        return {name: preset.description for name, preset in WEATHER_PRESETS.items()}
 
     def add_object(self, object_type: str,
                    position: Optional[Position3D] = None,
