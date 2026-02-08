@@ -425,7 +425,7 @@ class SceneViewWidget(ttk.Frame):
 
         self.canvas.create_polygon(
             cx, cy, lx, ly, rx, ry,
-            fill="#ff444433", outline="#ff4444"
+            fill="#993333", outline="#ff4444"
         )
 
 
