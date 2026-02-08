@@ -32,6 +32,9 @@ Modules:
 - pipeline: Simulation engine and effects
 - output: File writers and formats
 - video: Video-to-simulation processing
+- agc: Automatic gain control and display mapping
+- gimbal: Servo dynamics, scan patterns, target tracking
+- symbology: HUD overlays, reticles, track gates
 - examples: 10 example scenarios
 """
 
@@ -56,6 +59,15 @@ from eosim.pipeline.simulation import (
 from eosim.sensor.fpa import DetectorType, FPAGeometry
 from eosim.sensor.base import create_sensor_model
 
+# AGC
+from eosim.agc import AGCProcessor, AGCMode, Polarity, apply_agc
+
+# Gimbal
+from eosim.gimbal import GimbalController, ScanPatternGenerator, ScanPattern
+
+# Symbology
+from eosim.symbology import SymbologyRenderer, ReticleType, ThreatLevel
+
 __all__ = [
     # Version
     "__version__",
@@ -76,4 +88,17 @@ __all__ = [
     "DetectorType",
     "FPAGeometry",
     "create_sensor_model",
+    # AGC
+    "AGCProcessor",
+    "AGCMode",
+    "Polarity",
+    "apply_agc",
+    # Gimbal
+    "GimbalController",
+    "ScanPatternGenerator",
+    "ScanPattern",
+    # Symbology
+    "SymbologyRenderer",
+    "ReticleType",
+    "ThreatLevel",
 ]
