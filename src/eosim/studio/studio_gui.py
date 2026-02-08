@@ -15,6 +15,12 @@ from typing import Optional, Tuple, Dict, Any
 import threading
 import numpy as np
 
+try:
+    from PIL import Image, ImageTk
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
 from eosim.studio.project import Project, create_demo_project
 from eosim.studio.scene import Scene, SceneObject, Position3D, Orientation3D
 from eosim.studio.camera import Camera, LensType, SpectrumMode, SensitivityLevel, CAMERA_PRESETS
@@ -239,7 +245,7 @@ class CameraViewWidget(ttk.Frame):
             )
 
     def _display_frame(self, frame: RenderedFrame):
-        """Display rendered frame on canvas."""
+        """Display rendered frame on canvas using PIL for performance."""
         self.canvas.delete("all")
 
         # Get canvas size
@@ -248,36 +254,37 @@ class CameraViewWidget(ttk.Frame):
         if cw < 10 or ch < 10:
             cw, ch = 640, 480
 
-        # Scale image to fit
         img = frame.image
         ih, iw = img.shape[:2]
 
         # Calculate scaling
         scale = min(cw / iw, ch / ih)
-        new_w = int(iw * scale)
-        new_h = int(ih * scale)
+        new_w = max(1, int(iw * scale))
+        new_h = max(1, int(ih * scale))
 
-        # Draw pixels (simplified - in production use PIL)
-        step = max(1, min(ih, iw) // 100)
-        x_off = (cw - new_w) // 2
-        y_off = (ch - new_h) // 2
+        if HAS_PIL:
+            # Fast path: use PIL PhotoImage
+            pil_img = Image.fromarray(img)
+            pil_img = pil_img.resize((new_w, new_h), Image.NEAREST)
+            self._photo = ImageTk.PhotoImage(pil_img)
+            self.canvas.create_image(cw // 2, ch // 2, image=self._photo, anchor=tk.CENTER)
+        else:
+            # Fallback: draw a downsampled grid of rectangles
+            step = max(1, min(ih, iw) // 80)
+            x_off = (cw - new_w) // 2
+            y_off = (ch - new_h) // 2
+            for y in range(0, ih, step):
+                for x in range(0, iw, step):
+                    r, g, b = img[y, x]
+                    color = f"#{r:02x}{g:02x}{b:02x}"
+                    px = x_off + int(x * scale)
+                    py = y_off + int(y * scale)
+                    pw = max(1, int(step * scale))
+                    ph = max(1, int(step * scale))
+                    self.canvas.create_rectangle(px, py, px + pw, py + ph,
+                                                fill=color, outline="")
 
-        for y in range(0, ih, step):
-            for x in range(0, iw, step):
-                r, g, b = img[y, x]
-                color = f"#{r:02x}{g:02x}{b:02x}"
-
-                px = x_off + int(x * scale)
-                py = y_off + int(y * scale)
-                pw = max(1, int(step * scale))
-                ph = max(1, int(step * scale))
-
-                self.canvas.create_rectangle(
-                    px, py, px + pw, py + ph,
-                    fill=color, outline=""
-                )
-
-        # Draw crosshair
+        # Draw crosshair overlay
         cx = cw // 2
         cy = ch // 2
         self.canvas.create_line(cx - 20, cy, cx + 20, cy, fill="#00ff00", width=1)
@@ -565,12 +572,13 @@ class CameraSettingsWidget(ttk.Frame):
 
 
 class ObjectListWidget(ttk.Frame):
-    """Scene object list."""
+    """Scene object list with add/delete controls."""
 
-    def __init__(self, parent, scene: Scene, on_select=None):
+    def __init__(self, parent, scene: Scene, on_select=None, on_delete=None):
         super().__init__(parent)
         self.scene = scene
         self.on_select = on_select
+        self.on_delete = on_delete
 
         self._build_ui()
 
@@ -583,6 +591,8 @@ class ObjectListWidget(ttk.Frame):
 
         ttk.Button(header, text="+", width=3,
                   command=self._add_object).pack(side=tk.RIGHT)
+        ttk.Button(header, text="-", width=3,
+                  command=self._delete_object).pack(side=tk.RIGHT, padx=2)
 
         # Listbox
         list_frame = ttk.Frame(self)
@@ -613,28 +623,233 @@ class ObjectListWidget(ttk.Frame):
             obj_id = list(self.scene.objects.keys())[idx]
             self.on_select(obj_id)
 
+    def _delete_object(self):
+        """Delete the selected object from the scene."""
+        selection = self.listbox.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        obj_id = list(self.scene.objects.keys())[idx]
+        del self.scene.objects[obj_id]
+        self.refresh()
+        if self.on_delete:
+            self.on_delete()
+
     def _add_object(self):
-        # Simple dialog to add object
+        """Show dialog to add an object from the full library."""
         dialog = tk.Toplevel(self)
-        dialog.title("Add Object")
-        dialog.geometry("300x200")
+        dialog.title("Add Object to Scene")
+        dialog.geometry("350x400")
+        dialog.transient(self)
 
-        ttk.Label(dialog, text="Object Type:").pack(pady=5)
-        type_var = tk.StringVar(value="f16")
-        types = ["f16", "f22", "m1_abrams", "t90", "humvee", "soldier_standing",
-                "apache", "destroyer"]
-        ttk.Combobox(dialog, textvariable=type_var, values=types).pack(pady=5)
+        # Get available object types from the library
+        try:
+            from eosim.library import list_objects
+            types = list_objects()
+        except ImportError:
+            types = ["f16", "f22", "f15", "f18", "su27", "ah64", "mq9",
+                     "m1_abrams", "t90", "leopard2", "bradley", "humvee",
+                     "civilian_car", "pickup_technical",
+                     "arleigh_burke", "nimitz", "frigate",
+                     "soldier_standing", "soldier_prone", "civilian",
+                     "aim120", "patriot", "s400"]
 
-        ttk.Label(dialog, text="Name:").pack(pady=5)
+        # Search filter
+        ttk.Label(dialog, text="Search:").pack(anchor=tk.W, padx=10, pady=(5, 0))
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(dialog, textvariable=search_var)
+        search_entry.pack(fill=tk.X, padx=10, pady=2)
+        search_entry.focus_set()
+
+        # Scrollable object type listbox
+        list_frame = ttk.Frame(dialog)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        lb_scrollbar = ttk.Scrollbar(list_frame)
+        lb_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        type_listbox = tk.Listbox(list_frame, yscrollcommand=lb_scrollbar.set,
+                                  font=("Consolas", 10))
+        type_listbox.pack(fill=tk.BOTH, expand=True)
+        lb_scrollbar.config(command=type_listbox.yview)
+
+        for t in types:
+            type_listbox.insert(tk.END, t)
+
+        # Filter list as user types
+        def filter_list(*args):
+            query = search_var.get().lower()
+            type_listbox.delete(0, tk.END)
+            for t in types:
+                if query in t.lower():
+                    type_listbox.insert(tk.END, t)
+        search_var.trace_add("write", filter_list)
+
+        # Name entry
+        ttk.Label(dialog, text="Name (optional):").pack(anchor=tk.W, padx=10, pady=(5, 0))
         name_var = tk.StringVar(value="")
-        ttk.Entry(dialog, textvariable=name_var).pack(pady=5)
+        ttk.Entry(dialog, textvariable=name_var).pack(fill=tk.X, padx=10, pady=2)
+
+        # Count label
+        count_label = ttk.Label(dialog, text=f"{len(types)} objects available",
+                               font=("Segoe UI", 8))
+        count_label.pack(anchor=tk.W, padx=10)
 
         def add():
-            self.scene.add_object(type_var.get(), name=name_var.get() or None)
-            self.refresh()
-            dialog.destroy()
+            sel = type_listbox.curselection()
+            if sel:
+                obj_type = type_listbox.get(sel[0])
+                self.scene.add_object(obj_type, name=name_var.get() or None)
+                self.refresh()
+                dialog.destroy()
 
-        ttk.Button(dialog, text="Add", command=add).pack(pady=10)
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, padx=10, pady=10)
+        ttk.Button(btn_frame, text="Add", command=add).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+
+        # Double-click to add
+        type_listbox.bind("<Double-1>", lambda e: add())
+
+
+class ObjectPropertiesWidget(ttk.Frame):
+    """Object properties editor panel."""
+
+    def __init__(self, parent, on_change=None):
+        super().__init__(parent)
+        self.on_change = on_change
+        self._current_obj_id = None
+        self._current_scene = None
+
+        self._build_ui()
+
+    def _build_ui(self):
+        # Header
+        ttk.Label(self, text="Object Properties",
+                 font=("Segoe UI", 10, "bold")).pack(anchor=tk.W, pady=5)
+
+        # Info
+        self.name_var = tk.StringVar(value="(none selected)")
+        ttk.Label(self, textvariable=self.name_var,
+                 font=("Consolas", 9)).pack(anchor=tk.W, padx=5)
+
+        self.type_var = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.type_var,
+                 font=("Consolas", 8)).pack(anchor=tk.W, padx=5)
+
+        # Position
+        pos_frame = ttk.LabelFrame(self, text="Position (meters)", padding=3)
+        pos_frame.pack(fill=tk.X, pady=5, padx=5)
+
+        row1 = ttk.Frame(pos_frame)
+        row1.pack(fill=tk.X)
+        ttk.Label(row1, text="X:", width=3).pack(side=tk.LEFT)
+        self.pos_x_var = tk.StringVar(value="0")
+        ttk.Entry(row1, textvariable=self.pos_x_var, width=10).pack(side=tk.LEFT, padx=2)
+
+        row2 = ttk.Frame(pos_frame)
+        row2.pack(fill=tk.X)
+        ttk.Label(row2, text="Y:", width=3).pack(side=tk.LEFT)
+        self.pos_y_var = tk.StringVar(value="0")
+        ttk.Entry(row2, textvariable=self.pos_y_var, width=10).pack(side=tk.LEFT, padx=2)
+
+        row3 = ttk.Frame(pos_frame)
+        row3.pack(fill=tk.X)
+        ttk.Label(row3, text="Z:", width=3).pack(side=tk.LEFT)
+        self.pos_z_var = tk.StringVar(value="0")
+        ttk.Entry(row3, textvariable=self.pos_z_var, width=10).pack(side=tk.LEFT, padx=2)
+
+        # Orientation
+        ori_frame = ttk.LabelFrame(self, text="Orientation (degrees)", padding=3)
+        ori_frame.pack(fill=tk.X, pady=5, padx=5)
+
+        row4 = ttk.Frame(ori_frame)
+        row4.pack(fill=tk.X)
+        ttk.Label(row4, text="Hdg:", width=4).pack(side=tk.LEFT)
+        self.heading_var = tk.StringVar(value="0")
+        ttk.Entry(row4, textvariable=self.heading_var, width=10).pack(side=tk.LEFT, padx=2)
+
+        row5 = ttk.Frame(ori_frame)
+        row5.pack(fill=tk.X)
+        ttk.Label(row5, text="Pitch:", width=5).pack(side=tk.LEFT)
+        self.pitch_var = tk.StringVar(value="0")
+        ttk.Entry(row5, textvariable=self.pitch_var, width=10).pack(side=tk.LEFT, padx=2)
+
+        row6 = ttk.Frame(ori_frame)
+        row6.pack(fill=tk.X)
+        ttk.Label(row6, text="Roll:", width=5).pack(side=tk.LEFT)
+        self.roll_var = tk.StringVar(value="0")
+        ttk.Entry(row6, textvariable=self.roll_var, width=10).pack(side=tk.LEFT, padx=2)
+
+        # Visibility toggle
+        self.visible_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self, text="Visible", variable=self.visible_var).pack(anchor=tk.W, padx=5)
+
+        # Apply button
+        ttk.Button(self, text="Apply Changes",
+                  command=self._apply_changes).pack(fill=tk.X, padx=5, pady=5)
+
+    def show_object(self, scene: Scene, obj_id: str):
+        """Display properties for the given object."""
+        self._current_scene = scene
+        self._current_obj_id = obj_id
+
+        if obj_id not in scene.objects:
+            self.name_var.set("(not found)")
+            return
+
+        obj = scene.objects[obj_id]
+        self.name_var.set(obj.name)
+        self.type_var.set(f"Type: {obj.object_type}")
+
+        pos = obj.get_position_at(0.0)
+        self.pos_x_var.set(f"{pos.x:.1f}")
+        self.pos_y_var.set(f"{pos.y:.1f}")
+        self.pos_z_var.set(f"{pos.z:.1f}")
+
+        ori = obj.get_orientation_at(0.0)
+        self.heading_var.set(f"{ori.heading:.1f}")
+        self.pitch_var.set(f"{ori.pitch:.1f}")
+        self.roll_var.set(f"{ori.roll:.1f}")
+
+        self.visible_var.set(obj.visible)
+
+    def _apply_changes(self):
+        """Apply edited properties back to the scene object."""
+        if not self._current_scene or not self._current_obj_id:
+            return
+        if self._current_obj_id not in self._current_scene.objects:
+            return
+
+        obj = self._current_scene.objects[self._current_obj_id]
+
+        try:
+            x = float(self.pos_x_var.get())
+            y = float(self.pos_y_var.get())
+            z = float(self.pos_z_var.get())
+            obj.position = Position3D(x, y, z)
+        except ValueError:
+            pass
+
+        try:
+            h = float(self.heading_var.get())
+            p = float(self.pitch_var.get())
+            r = float(self.roll_var.get())
+            obj.orientation = Orientation3D(heading=h, pitch=p, roll=r)
+        except ValueError:
+            pass
+
+        obj.visible = self.visible_var.get()
+
+        if self.on_change:
+            self.on_change()
+
+    def clear(self):
+        """Clear the properties display."""
+        self._current_obj_id = None
+        self._current_scene = None
+        self.name_var.set("(none selected)")
+        self.type_var.set("")
 
 
 class TerrainSettingsWidget(ttk.Frame):
@@ -1112,13 +1327,19 @@ class Studio:
         main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Left panel - Objects
+        # Left panel - Objects + Properties
         left_frame = ttk.Frame(main, width=200)
         main.add(left_frame, weight=1)
 
         self.object_list = ObjectListWidget(left_frame, self.project.scene,
-                                           on_select=self._on_object_selected)
+                                           on_select=self._on_object_selected,
+                                           on_delete=self._on_object_deleted)
         self.object_list.pack(fill=tk.BOTH, expand=True)
+
+        # Object properties panel (below object list)
+        self.object_properties = ObjectPropertiesWidget(
+            left_frame, on_change=self._on_object_properties_changed)
+        self.object_properties.pack(fill=tk.X, pady=5)
 
         # Center panel - Views
         center_frame = ttk.Frame(main, width=800)
@@ -1141,9 +1362,49 @@ class Studio:
                                              on_seek=self._on_time_changed)
         self.timeline_widget.pack(fill=tk.X)
 
-        # Right panel - Settings
-        right_frame = ttk.Frame(main, width=250)
-        main.add(right_frame, weight=1)
+        # Right panel - Settings (scrollable)
+        right_outer = ttk.Frame(main, width=250)
+        main.add(right_outer, weight=1)
+
+        # Scrollbar
+        right_scrollbar = ttk.Scrollbar(right_outer, orient=tk.VERTICAL)
+        right_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Canvas for scrolling
+        self._right_canvas = tk.Canvas(right_outer, yscrollcommand=right_scrollbar.set,
+                                       highlightthickness=0, width=240)
+        self._right_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        right_scrollbar.config(command=self._right_canvas.yview)
+
+        # Inner frame for settings content
+        right_frame = ttk.Frame(self._right_canvas)
+        self._right_canvas_window = self._right_canvas.create_window(
+            (0, 0), window=right_frame, anchor=tk.NW
+        )
+
+        # Update scroll region when content changes
+        def _update_scroll_region(event=None):
+            self._right_canvas.configure(scrollregion=self._right_canvas.bbox("all"))
+        right_frame.bind("<Configure>", _update_scroll_region)
+
+        # Match canvas width to outer frame
+        def _update_canvas_width(event=None):
+            canvas_width = self._right_canvas.winfo_width()
+            self._right_canvas.itemconfig(self._right_canvas_window, width=canvas_width)
+        self._right_canvas.bind("<Configure>", _update_canvas_width)
+
+        # Enable mousewheel scrolling on the right panel
+        def _on_mousewheel(event):
+            self._right_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _bind_mousewheel(event):
+            self._right_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _unbind_mousewheel(event):
+            self._right_canvas.unbind_all("<MouseWheel>")
+
+        self._right_canvas.bind("<Enter>", _bind_mousewheel)
+        self._right_canvas.bind("<Leave>", _unbind_mousewheel)
 
         self.camera_settings = CameraSettingsWidget(right_frame, self.project.camera,
                                                    on_change=self._on_camera_changed)
@@ -1183,6 +1444,12 @@ class Studio:
         view_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
         view_menu.add_command(label="Reset View", command=self._reset_view)
+
+        # Tools menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="Object Library Browser",
+                              command=self._launch_object_viewer)
 
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -1227,9 +1494,18 @@ class Studio:
         self._on_time_changed(self.project.timeline.current_time)
 
     def _on_object_selected(self, obj_id: str):
-        """Handle object selection."""
-        # Could show object properties panel
-        pass
+        """Handle object selection - show properties panel."""
+        self.object_properties.show_object(self.project.scene, obj_id)
+
+    def _on_object_deleted(self):
+        """Handle object deletion."""
+        self.object_properties.clear()
+        self._on_time_changed(self.project.timeline.current_time)
+
+    def _on_object_properties_changed(self):
+        """Handle object property changes."""
+        self.object_list.refresh()
+        self._on_time_changed(self.project.timeline.current_time)
 
     def _new_project(self):
         self.project = Project("New Project")
@@ -1239,6 +1515,7 @@ class Studio:
         self.scene_view.camera = self.project.camera
         self.object_list.scene = self.project.scene
         self.object_list.refresh()
+        self.object_properties.clear()
         self.terrain_settings.scene = self.project.scene
         self.weather_settings.scene = self.project.scene
         self.root.title(f"EOSIM Studio - {self.project.name}")
@@ -1257,6 +1534,7 @@ class Studio:
                 self.scene_view.camera = self.project.camera
                 self.object_list.scene = self.project.scene
                 self.object_list.refresh()
+                self.object_properties.clear()
                 self.terrain_settings.scene = self.project.scene
                 self.weather_settings.scene = self.project.scene
                 self.root.title(f"EOSIM Studio - {self.project.name}")
@@ -1288,6 +1566,7 @@ class Studio:
         self.timeline_widget.update_duration(self.project.duration)
         self.object_list.scene = self.project.scene
         self.object_list.refresh()
+        self.object_properties.clear()
         self.terrain_settings.scene = self.project.scene
         self.weather_settings.scene = self.project.scene
         self.root.title(f"EOSIM Studio - {self.project.name}")
@@ -1366,6 +1645,20 @@ class Studio:
 
     def _reset_view(self):
         self._on_time_changed(0.0)
+
+    def _launch_object_viewer(self):
+        """Launch the 3D Object Library Browser."""
+        try:
+            from eosim.library.object_viewer import launch_object_viewer
+            threading.Thread(target=launch_object_viewer, daemon=True).start()
+        except ImportError:
+            messagebox.showerror(
+                "Error",
+                "Object library module not available.\n"
+                "Make sure eosim.library is installed."
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to launch viewer: {e}")
 
     def _show_about(self):
         messagebox.showinfo(
