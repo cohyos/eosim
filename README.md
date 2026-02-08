@@ -13,6 +13,9 @@ A PC-based, open-source electro-optical/infrared simulation framework that gener
 - **EOSIM Studio**: Video-production-style GUI for creating sensor simulation videos
 - **3D Object Library**: 50+ military/civilian objects with thermal signatures
 - **Enhanced Thermal Shapes**: Realistic thermal zones for vehicles, people, aircraft
+- **Automatic Gain Control**: 8 AGC modes (histogram EQ, CLAHE, DDE, ICE, logarithmic, etc.) with polarity palettes (white-hot, black-hot, ironbow, rainbow)
+- **Gimbal Simulation**: 2-axis servo dynamics with PID control, scan patterns (raster, spiral, rosette, sector), target tracking, LOS jitter
+- **HUD Symbology**: MIL-STD overlays with targeting reticles, track gates, compass heading tape, pitch ladder, status displays
 
 ## EOSIM Studio - Video Creator Interface
 
@@ -115,9 +118,72 @@ sig = jet.get_signature(use_enhanced_shape=True, aspect_angle_deg=180)
 # Exhaust plume gradient: 500K at nozzle → 300K
 ```
 
+## Automatic Gain Control (AGC)
+
+Convert raw sensor data to display-ready imagery with multiple AGC algorithms:
+
+```python
+from eosim.agc import AGCProcessor, AGCParameters, AGCMode, PolarityMapper, Polarity
+
+# Apply CLAHE for local contrast enhancement
+params = AGCParameters(mode=AGCMode.CLAHE, clahe_clip_limit=3.0, output_bits=8)
+agc = AGCProcessor(params)
+display = agc.process(raw_14bit_image)
+
+# Apply ironbow color palette
+mapper = PolarityMapper(Polarity.IRONBOW)
+rgb = mapper.apply(display)
+```
+
+Available AGC modes: `LINEAR`, `HISTOGRAM_EQ`, `CLAHE`, `PLATEAU`, `DDE`, `ICE`, `LOGARITHMIC`, `MANUAL`
+
+Available palettes: `WHITE_HOT`, `BLACK_HOT`, `IRONBOW`, `RAINBOW`, `LAVA`, `ARCTIC`, `ISOTHERM`, `SEPIA`
+
+## Gimbal Simulation
+
+Simulate 2-axis gimbal servo dynamics with PID control, scan patterns, and target tracking:
+
+```python
+from eosim.gimbal import create_flir_turret, ScanPatternGenerator, ScanPattern, TargetTracker
+
+# Create a FLIR turret gimbal
+gimbal = create_flir_turret()
+gimbal.command_position(30.0, 15.0)  # Az, El in degrees
+states = gimbal.simulate(5.0, dt=0.01)
+
+# Generate a raster scan pattern
+gen = ScanPatternGenerator()
+az, el, t = gen.generate(ScanPattern.RASTER, duration_s=10.0, sample_rate_hz=100,
+                         fov_width_deg=10.0, fov_height_deg=8.0)
+
+# Track a moving target
+tracker = TargetTracker(gimbal)
+tracker.track(target_az_deg=45.0, target_el_deg=10.0, dt=0.01)
+```
+
+Scan patterns: `RASTER`, `SPIRAL`, `ROSETTE`, `SECTOR`, `STARE`
+
+## HUD Symbology
+
+Render MIL-STD-style HUD overlays onto sensor imagery:
+
+```python
+from eosim.symbology import SymbologyRenderer, PlatformState, SensorStatus, TrackInfo, ThreatLevel
+
+renderer = SymbologyRenderer()
+platform = PlatformState(heading_deg=270, pitch_deg=5, altitude_m=5000, airspeed_mps=200)
+sensor = SensorStatus(mode="WHOT", fov_deg=3.0, range_m=4500)
+tracks = [
+    TrackInfo(x=300, y=200, track_id=1, threat=ThreatLevel.HOSTILE, range_m=3500),
+]
+overlay = renderer.render(sensor_image, platform=platform, sensor=sensor, tracks=tracks)
+```
+
+Reticle types: `CROSSHAIR`, `PIPPER`, `CCIP`, `CCRP`, `DIAMOND`, `CIRCLE`
+
 ## Example Scenarios
 
-EOSIM includes 10 comprehensive example scenarios:
+EOSIM includes 15+ example scenarios:
 
 1. **Vehicle on Road** (LWIR) - Hot vehicle on cool road background
 2. **Person in Forest** (MWIR) - Human target with vegetation clutter
@@ -152,7 +218,10 @@ pip install trimesh        # For advanced 3D mesh operations
 - `eosim.pipeline` - Simulation engine and effects
 - `eosim.library` - 3D Object Library & Viewer
 - `eosim.targets` - Target models with thermal signatures
-- `eosim.studio` - **NEW**: Video-production GUI
+- `eosim.agc` - Automatic gain control and display palettes
+- `eosim.gimbal` - Gimbal servo dynamics and scan patterns
+- `eosim.symbology` - HUD symbology overlays
+- `eosim.studio` - Video-production GUI with sensor physics
 - `eosim.output` - File I/O (NumPy, PNG, TIFF, ENVI)
 - `eosim.examples` - Example scenarios
 
