@@ -4,6 +4,12 @@ Aircraft target models for EOSIM.
 Provides thermal signature models for aircraft including jets,
 helicopters, and drones.
 
+Features realistic exhaust plume thermal gradients:
+- Engine nozzle: 500K+ at core
+- Plume gradient: 500K at nozzle falling to 300K (ambient)
+- Plume expands and cools with distance
+- Afterburner increases temperatures significantly
+
 Example Usage:
 --------------
 # Example 1: Create a fighter jet at high throttle
@@ -21,6 +27,11 @@ Example Usage:
 >>> from eosim.targets import DroneTarget
 >>> drone = DroneTarget.quadcopter(battery_temp_k=310, motors_active=True)
 >>> signature = drone.get_signature()
+
+# Example 4: Use enhanced exhaust plume gradient
+>>> jet = AircraftTarget.fighter_jet(throttle=0.9, afterburner=True)
+>>> sig = jet.get_signature(use_enhanced_shape=True, aspect_angle_deg=180)
+>>> print(f"Nozzle temp: {sig.max_temperature:.0f}K")  # ~900K with afterburner
 """
 
 from dataclasses import dataclass
@@ -36,6 +47,7 @@ from eosim.targets.base import (
     MaterialProperties,
     MaterialType,
 )
+from eosim.targets.shapes import AircraftWithPlumeShape, ThermalZone, ThermalZoneConfig
 
 
 @dataclass
@@ -86,6 +98,7 @@ class AircraftTarget(Target):
         throttle: float = 0.5,
         altitude_m: float = 5000.0,
         speed_mach: float = 0.8,
+        afterburner: bool = False,
     ) -> None:
         """Initialize aircraft target.
 
@@ -97,6 +110,7 @@ class AircraftTarget(Target):
             throttle: Throttle setting 0-1
             altitude_m: Altitude in meters
             speed_mach: Speed in Mach number
+            afterburner: Afterburner engaged (fighter jets)
         """
         if geometry is None:
             geometry = TargetGeometry(length_m=15.0, width_m=10.0, height_m=4.0)
@@ -112,6 +126,7 @@ class AircraftTarget(Target):
         self.throttle = throttle
         self.altitude_m = altitude_m
         self.speed_mach = speed_mach
+        self.afterburner = afterburner
 
         # Aerodynamic heating at high speed
         self._aero_heating = self._compute_aero_heating()
@@ -179,10 +194,47 @@ class AircraftTarget(Target):
         resolution: tuple[int, int] = (64, 64),
         aspect_angle_deg: float = 0.0,
         elevation_angle_deg: float = 0.0,
+        use_enhanced_shape: bool = True,
     ) -> TargetSignature:
-        """Generate aircraft thermal signature."""
+        """Generate aircraft thermal signature.
+
+        Args:
+            resolution: Output resolution (height, width)
+            aspect_angle_deg: Viewing angle (0=front, 90=side, 180=rear)
+            elevation_angle_deg: Elevation viewing angle
+            use_enhanced_shape: Use enhanced exhaust plume with thermal gradient
+
+        Returns:
+            TargetSignature with temperature and emissivity maps
+        """
         h, w = resolution
 
+        if use_enhanced_shape:
+            # Use enhanced shape with exhaust plume gradient
+            plume_shape = AircraftWithPlumeShape(
+                length_m=self.geometry.length_m,
+                wingspan_m=self.geometry.width_m,
+                height_m=self.geometry.height_m,
+                throttle=self.throttle,
+                afterburner=self.afterburner,
+                altitude_m=self.altitude_m,
+                speed_mach=self.speed_mach,
+                num_engines=self.num_engines,
+            )
+
+            temp_map, emis_map, mask = plume_shape.render(
+                resolution, aspect_angle_deg, elevation_angle_deg
+            )
+
+            return TargetSignature(
+                temperature_map=temp_map,
+                emissivity_map=emis_map,
+                geometry=self.geometry,
+                aspect_angle_deg=aspect_angle_deg,
+                elevation_angle_deg=elevation_angle_deg,
+            )
+
+        # Legacy rendering path
         # Create aircraft shape based on view angle
         mask = self._create_aircraft_shape(resolution, aspect_angle_deg)
 
@@ -253,7 +305,16 @@ class AircraftTarget(Target):
         altitude_m: float = 8000.0,
         afterburner: bool = False,
     ) -> "AircraftTarget":
-        """Create a fighter jet target."""
+        """Create a fighter jet target.
+
+        Args:
+            throttle: Throttle setting 0-1
+            altitude_m: Altitude in meters
+            afterburner: Afterburner engaged (significantly increases exhaust temps)
+
+        Returns:
+            AircraftTarget configured as fighter jet
+        """
         geometry = TargetGeometry(length_m=16.0, width_m=11.0, height_m=5.0)
         engine = JetEngineModel(
             max_thrust_kn=130,
@@ -273,6 +334,7 @@ class AircraftTarget(Target):
             throttle=min(effective_throttle, 1.0),
             altitude_m=altitude_m,
             speed_mach=0.9 + throttle * 0.8,
+            afterburner=afterburner,
         )
 
     @classmethod

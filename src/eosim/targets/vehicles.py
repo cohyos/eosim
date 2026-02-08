@@ -4,6 +4,13 @@ Vehicle target models for EOSIM.
 Provides detailed thermal signature models for various vehicle types
 including cars, trucks, tanks, and other ground vehicles.
 
+Features realistic thermal zones:
+- Engine compartment (370K when running)
+- Cabin/interior (320K with occupants)
+- Wheels (340K, increases with speed)
+- Exhaust (400K when engine running)
+- Body panels (ambient + solar loading)
+
 Example Usage:
 --------------
 # Example 1: Create a running sedan and get its thermal signature
@@ -26,6 +33,11 @@ Example Usage:
 ...     track_friction_heat=True,
 ... )
 >>> signature = tank.get_signature(aspect_angle_deg=45)
+
+# Example 4: Use enhanced thermal zones
+>>> car = VehicleTarget.sedan(engine_state="running", speed_kmh=80)
+>>> sig = car.get_signature(use_enhanced_shape=True)
+>>> print(f"Engine zone: {sig.max_temperature:.0f}K")
 """
 
 from dataclasses import dataclass, field
@@ -41,6 +53,7 @@ from eosim.targets.base import (
     MaterialProperties,
     MaterialType,
 )
+from eosim.targets.shapes import EnhancedVehicleShape, ThermalZone, ThermalZoneConfig
 
 
 @dataclass
@@ -189,10 +202,48 @@ class VehicleTarget(Target):
         resolution: tuple[int, int] = (64, 64),
         aspect_angle_deg: float = 0.0,
         elevation_angle_deg: float = 0.0,
+        use_enhanced_shape: bool = True,
     ) -> TargetSignature:
-        """Generate vehicle thermal signature."""
+        """Generate vehicle thermal signature.
+
+        Args:
+            resolution: Output resolution (height, width)
+            aspect_angle_deg: Viewing angle (0=front, 90=side, 180=rear)
+            elevation_angle_deg: Elevation viewing angle
+            use_enhanced_shape: Use enhanced thermal zones (engine, cabin, wheels, exhaust)
+
+        Returns:
+            TargetSignature with temperature and emissivity maps
+        """
         h, w = resolution
 
+        if use_enhanced_shape:
+            # Use enhanced shape with distinct thermal zones
+            enhanced_shape = EnhancedVehicleShape(
+                length_m=self.geometry.length_m,
+                width_m=self.geometry.width_m,
+                height_m=self.geometry.height_m,
+                engine_running=self.engine_state in ("idle", "running", "starting"),
+                speed_kmh=self.speed_kmh,
+                ambient_k=self.ambient_temperature_k,
+                occupants=1,
+                engine_position="front",
+                vehicle_type=self._get_vehicle_type(),
+            )
+
+            temp_map, emis_map, mask = enhanced_shape.render(
+                resolution, aspect_angle_deg, elevation_angle_deg
+            )
+
+            return TargetSignature(
+                temperature_map=temp_map,
+                emissivity_map=emis_map,
+                geometry=self.geometry,
+                aspect_angle_deg=aspect_angle_deg,
+                elevation_angle_deg=elevation_angle_deg,
+            )
+
+        # Legacy rendering path
         # Create base shape
         mask = self._create_vehicle_shape(resolution, aspect_angle_deg)
 
@@ -236,6 +287,18 @@ class VehicleTarget(Target):
             aspect_angle_deg=aspect_angle_deg,
             elevation_angle_deg=elevation_angle_deg,
         )
+
+    def _get_vehicle_type(self) -> str:
+        """Get vehicle type string for enhanced shape."""
+        name_lower = self.name.lower()
+        if "truck" in name_lower:
+            return "truck"
+        elif "suv" in name_lower:
+            return "suv"
+        elif "tank" in name_lower:
+            return "tank"
+        else:
+            return "sedan"
 
     def _create_vehicle_shape(
         self,
